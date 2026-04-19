@@ -4,6 +4,7 @@ import type {
     SchedulerConfig,
     GanttEntry,
     SchedulerMetrics,
+    SchedulerSnapshot,
 } from "../types";
 import { ProcessManager } from "../kernel/ProcessManager";
 import { Scheduler } from "../kernel/Scheduler";
@@ -15,6 +16,7 @@ interface KernelStore {
     processes: PCB[];
     gantt: GanttEntry[];
     metrics: SchedulerMetrics | null;
+    latestSchedulerSnapshot: SchedulerSnapshot | null;
     schedulerConfig: SchedulerConfig;
 
     spawnProcess: (
@@ -33,6 +35,7 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
     processes: [],
     gantt: [],
     metrics: null,
+    latestSchedulerSnapshot: null,
     schedulerConfig: { algorithm: "FCFS", timeQuantum: 2 },
 
     spawnProcess: (name, burst, priority = 1, arrival = 0) => {
@@ -48,7 +51,22 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
     runScheduler: () => {
         const active = get().processes.filter((p) => p.state !== "terminated");
         const { gantt, metrics } = scheduler.run(active);
-        set({ gantt, metrics });
+        const snapshot: SchedulerSnapshot = {
+            algorithm: get().schedulerConfig.algorithm,
+            timeQuantum: get().schedulerConfig.timeQuantum,
+            gantt,
+            metrics,
+            processStates: active.map((p) => ({
+                pid: p.pid,
+                name: p.name,
+                waitingTime: p.waitingTime,
+                turnaroundTime: p.turnaroundTime,
+                completionTime: p.completionTime ?? 0,
+                responseTime: 0,
+            })),
+            ranAt: Date.now(),
+        };
+        set({ gantt, metrics, latestSchedulerSnapshot: snapshot });
     },
 
     setSchedulerConfig: (config) => {
@@ -58,6 +76,11 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
 
     resetAll: () => {
         pm.reset();
-        set({ processes: [], gantt: [], metrics: null });
+        set({
+            processes: [],
+            gantt: [],
+            metrics: null,
+            latestSchedulerSnapshot: null,
+        });
     },
 }));

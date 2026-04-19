@@ -18,23 +18,21 @@ export interface PCB {
     waitingTime: number;
     turnaroundTime: number;
     completionTime?: number;
-    color: string; // for UI visualization
+    color: string;
 }
 
 export interface TCB {
     tid: number;
-    pid: number; // parent process
+    pid: number;
     state: ProcessState;
-    stackPointer: number; // simulated
+    stackPointer: number;
 }
 
-// ─── Scheduling ─────────────────────────────────────────────────
-
-export type SchedulerAlgorithm = "FCFS" | "RR" | "PRIORITY";
+export type SchedulerAlgorithm = "FCFS" | "RR" | "PRIORITY_RR" | "SRJF";
 
 export interface SchedulerConfig {
     algorithm: SchedulerAlgorithm;
-    timeQuantum: number; // for Round Robin
+    timeQuantum: number;
 }
 
 export interface GanttEntry {
@@ -52,20 +50,38 @@ export interface SchedulerMetrics {
     throughput: number;
 }
 
+export interface SchedulerProcessState {
+    pid: number;
+    name: string;
+    waitingTime: number;
+    turnaroundTime: number;
+    completionTime: number;
+    responseTime: number;
+}
+
+export interface SchedulerSnapshot {
+    algorithm: SchedulerAlgorithm;
+    timeQuantum: number;
+    gantt: GanttEntry[];
+    metrics: SchedulerMetrics;
+    processStates: SchedulerProcessState[];
+    ranAt: number;
+}
+
 // Memory
 
 export type PageReplacementPolicy = "FIFO" | "LRU";
 
 export interface MemoryFrame {
     frameId: number;
-    pid: number | null; // null = free
+    pid: number | null;
     pageNumber: number | null;
     color: string | null;
 }
 
 export interface PageTableEntry {
     pageNumber: number;
-    frameId: number | null; // null = not in memory (page fault)
+    frameId: number | null;
     valid: boolean;
 }
 
@@ -84,7 +100,7 @@ export interface SemaphoreInfo {
     id: string;
     name: string;
     value: number;
-    waitingQueue: number[]; // list of PIDs waiting
+    waitingQueue: number[];
 }
 
 // System
@@ -93,5 +109,5 @@ export interface SystemStats {
     cpuUsage: number;
     memoryUsage: number;
     runningProcesses: number;
-    uptime: number; // in seconds
+    uptime: number;
 }
