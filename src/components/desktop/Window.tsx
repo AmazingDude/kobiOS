@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 interface WindowProps {
     id: string;
@@ -124,102 +125,128 @@ export function Window({
         };
     }, []);
 
-    if (isMinimized) return null;
-
     return (
-        <div
-            className={`window-chrome glass-panel${isActive ? " active" : ""}`}
-            style={{
-                left: isMaximized ? 0 : pos.x,
-                top: isMaximized ? 28 : pos.y,
-                width: isMaximized ? "100vw" : size.w,
-                height: isMaximized ? "calc(100vh - 64px)" : size.h,
-                zIndex,
-                border: `1px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
-                borderRadius: 4,
-            }}
-            data-active={isActive ? "true" : "false"}
-            onMouseDown={() => onFocus(id)}
-        >
-            {/* Title bar */}
-            <div
-                className="window-titlebar"
-                onMouseDown={handleTitleMouseDown}
-                style={{ background: "rgba(29, 32, 33, 0.95)" }}
-            >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {icon && (
-                        <span
+        <AnimatePresence propagate>
+            {!isMinimized && (
+                <motion.div
+                    key={id}
+                    className={`window-chrome glass-panel${isActive ? " active" : ""}`}
+                    initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{
+                        opacity: 0,
+                        scale: 0.85,
+                        y: 40,
+                        transition: { duration: 0.15, ease: "easeIn" },
+                    }}
+                    transition={{
+                        duration: 0.18,
+                        ease: [0.25, 0.46, 0.45, 0.94],
+                    }}
+                    whileTap={{ scale: 0.998 }}
+                    layoutId={id}
+                    style={{
+                        left: isMaximized ? 0 : pos.x,
+                        top: isMaximized ? 28 : pos.y,
+                        width: isMaximized ? "100vw" : size.w,
+                        height: isMaximized ? "calc(100vh - 64px)" : size.h,
+                        zIndex,
+                        border: `1px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
+                        borderRadius: 4,
+                    }}
+                    data-active={isActive ? "true" : "false"}
+                    onMouseDown={() => onFocus(id)}
+                >
+                    {/* Title bar */}
+                    <div
+                        className="window-titlebar"
+                        onMouseDown={handleTitleMouseDown}
+                        style={{ background: "rgba(29, 32, 33, 0.95)" }}
+                    >
+                        <div
                             style={{
-                                color: "var(--color-muted)",
                                 display: "flex",
+                                alignItems: "center",
+                                gap: 8,
                             }}
                         >
-                            {icon}
-                        </span>
+                            {icon && (
+                                <span
+                                    style={{
+                                        color: "var(--color-muted)",
+                                        display: "flex",
+                                    }}
+                                >
+                                    {icon}
+                                </span>
+                            )}
+                            <span
+                                className="window-title"
+                                style={{ color: "#fabd2f" }}
+                            >
+                                {title}
+                            </span>
+                        </div>
+
+                        <div className="window-controls">
+                            <button
+                                className="window-btn window-btn-min"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMinimize(id);
+                                }}
+                                title="Minimize"
+                            />
+                            <button
+                                className="window-btn window-btn-max"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleMaximize();
+                                }}
+                                title={isMaximized ? "Restore" : "Maximize"}
+                            />
+                            <button
+                                className="window-btn window-btn-close"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClose(id);
+                                }}
+                                title="Close"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Body */}
+                    <div
+                        className="window-body"
+                        style={{
+                            padding: 0,
+                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                        }}
+                    >
+                        {children}
+                    </div>
+
+                    {!isMaximized && (
+                        <div
+                            onMouseDown={handleResizeMouseDown}
+                            style={{
+                                position: "absolute",
+                                right: 0,
+                                bottom: 0,
+                                width: 14,
+                                height: 14,
+                                cursor: "nwse-resize",
+                                background:
+                                    "linear-gradient(135deg, transparent 0 35%, rgba(168,153,132,0.35) 35% 50%, transparent 50% 65%, rgba(168,153,132,0.35) 65% 80%, transparent 80% 100%)",
+                            }}
+                            title="Resize"
+                        />
                     )}
-                    <span className="window-title" style={{ color: "#fabd2f" }}>
-                        {title}
-                    </span>
-                </div>
-
-                <div className="window-controls">
-                    <button
-                        className="window-btn window-btn-min"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onMinimize(id);
-                        }}
-                        title="Minimize"
-                    />
-                    <button
-                        className="window-btn window-btn-max"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMaximize();
-                        }}
-                        title={isMaximized ? "Restore" : "Maximize"}
-                    />
-                    <button
-                        className="window-btn window-btn-close"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onClose(id);
-                        }}
-                        title="Close"
-                    />
-                </div>
-            </div>
-
-            {/* Body */}
-            <div
-                className="window-body"
-                style={{
-                    padding: 0,
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                }}
-            >
-                {children}
-            </div>
-
-            {!isMaximized && (
-                <div
-                    onMouseDown={handleResizeMouseDown}
-                    style={{
-                        position: "absolute",
-                        right: 0,
-                        bottom: 0,
-                        width: 14,
-                        height: 14,
-                        cursor: "nwse-resize",
-                        background:
-                            "linear-gradient(135deg, transparent 0 35%, rgba(168,153,132,0.35) 35% 50%, transparent 50% 65%, rgba(168,153,132,0.35) 65% 80%, transparent 80% 100%)",
-                    }}
-                    title="Resize"
-                />
+                </motion.div>
             )}
-        </div>
+        </AnimatePresence>
     );
 }

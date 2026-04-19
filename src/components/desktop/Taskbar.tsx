@@ -7,6 +7,7 @@ import {
     Terminal as TermIcon,
     FileText,
 } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface TaskbarProps {
     openWindows: string[];
@@ -86,10 +87,12 @@ export function Taskbar({
                 const IconComp = app.icon;
 
                 return (
-                    <button
+                    <motion.button
                         key={app.id}
                         className="taskbar-btn"
                         onClick={() => handleClick(app.id)}
+                        whileTap={{ scale: 0.94 }}
+                        transition={{ duration: 0.1 }}
                         title={app.label}
                         style={{
                             opacity: isOpen ? 1 : 0.5,
@@ -113,7 +116,7 @@ export function Taskbar({
                             <IconComp size={12} strokeWidth={1.8} />
                         </span>
                         {app.label}
-                    </button>
+                    </motion.button>
                 );
             })}
 

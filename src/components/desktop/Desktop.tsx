@@ -17,6 +17,7 @@ import {
     FileText,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
 interface AppDef {
     id: string;
@@ -167,7 +168,10 @@ export function Desktop() {
             .sort((a, b) => b.zIndex - a.zIndex)[0]?.id ?? null;
 
     return (
-        <div
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
             style={{
                 width: "100vw",
                 height: "100vh",
@@ -240,30 +244,40 @@ export function Desktop() {
                     zIndex: 10,
                 }}
             >
-                {DESKTOP_ICONS.map((icon) => {
+                {DESKTOP_ICONS.map((icon, index) => {
                     const IconComp = DESKTOP_ICON_COMPONENTS[icon.id];
                     return (
-                        <button
+                        <motion.div
                             key={icon.id}
-                            className="desktop-icon"
-                            onClick={() => openWindow(icon.id)}
-                            onDoubleClick={() => openWindow(icon.id)}
-                            title={`Double-click to open ${icon.label.replace("\n", " ")}`}
-                            style={{
-                                border: "none",
-                                background: "transparent",
-                                padding: 0,
+                            initial={{ opacity: 0, x: -12 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{
+                                delay: 0.3 + index * 0.07,
+                                duration: 0.25,
+                                ease: "easeOut",
                             }}
                         >
-                            <div className="desktop-icon-glyph">
-                                {IconComp && (
-                                    <IconComp size={22} strokeWidth={1.5} />
-                                )}
-                            </div>
-                            <span className="desktop-icon-label">
-                                {icon.label}
-                            </span>
-                        </button>
+                            <button
+                                className="desktop-icon"
+                                onClick={() => openWindow(icon.id)}
+                                onDoubleClick={() => openWindow(icon.id)}
+                                title={`Double-click to open ${icon.label.replace("\n", " ")}`}
+                                style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    padding: 0,
+                                }}
+                            >
+                                <div className="desktop-icon-glyph">
+                                    {IconComp && (
+                                        <IconComp size={22} strokeWidth={1.5} />
+                                    )}
+                                </div>
+                                <span className="desktop-icon-label">
+                                    {icon.label}
+                                </span>
+                            </button>
+                        </motion.div>
                     );
                 })}
             </div>
@@ -291,29 +305,31 @@ export function Desktop() {
             </div>
 
             {/* Windows */}
-            {windows.map((win) => {
-                const def = APPS.find((a) => a.id === win.id);
-                if (!def) return null;
-                const AppComponent = def.component;
-                return (
-                    <Window
-                        key={win.id}
-                        id={win.id}
-                        title={def.title}
-                        icon={def.icon}
-                        defaultPosition={def.defaultPos}
-                        defaultSize={def.defaultSize}
-                        zIndex={win.zIndex}
-                        isActive={activeWin === win.id}
-                        isMinimized={win.minimized}
-                        onClose={closeWindow}
-                        onMinimize={minimizeWindow}
-                        onFocus={focusWindow}
-                    >
-                        <AppComponent />
-                    </Window>
-                );
-            })}
+            <AnimatePresence>
+                {windows.map((win) => {
+                    const def = APPS.find((a) => a.id === win.id);
+                    if (!def) return null;
+                    const AppComponent = def.component;
+                    return (
+                        <Window
+                            key={win.id}
+                            id={win.id}
+                            title={def.title}
+                            icon={def.icon}
+                            defaultPosition={def.defaultPos}
+                            defaultSize={def.defaultSize}
+                            zIndex={win.zIndex}
+                            isActive={activeWin === win.id}
+                            isMinimized={win.minimized}
+                            onClose={closeWindow}
+                            onMinimize={minimizeWindow}
+                            onFocus={focusWindow}
+                        >
+                            <AppComponent />
+                        </Window>
+                    );
+                })}
+            </AnimatePresence>
 
             {/* Taskbar */}
             <Taskbar
@@ -325,6 +341,6 @@ export function Desktop() {
                 onWindowMinimize={minimizeWindow}
                 onWindowFocus={focusWindow}
             />
-        </div>
+        </motion.div>
     );
 }

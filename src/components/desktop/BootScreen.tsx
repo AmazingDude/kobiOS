@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useKernelStore } from "../../store/kernelStore";
 import type { CSSProperties } from "react";
+import { motion } from "framer-motion";
 
 const BOOT_LINES = [
     { tag: "    0.000", text: "kobiOS kernel 1.0.0 — loading...", cls: "info" },
@@ -115,7 +116,11 @@ export function BootScreen({ onComplete }: BootScreenProps) {
     };
 
     return (
-        <div className="boot-screen">
+        <motion.div
+            className="boot-screen"
+            exit={{ opacity: 0, scale: 1.02 }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+        >
             {/* Logo */}
             <div
                 style={{
@@ -242,6 +247,6 @@ export function BootScreen({ onComplete }: BootScreenProps) {
                     entering desktop...
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }
