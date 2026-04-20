@@ -146,49 +146,55 @@ export function Desktop() {
         img.src = wallpaperUrl;
     }, [wallpaperUrl]);
 
-    const openWindow = useCallback((id: string) => {
-        setWindows((prev) => {
-            if (prev.find((w) => w.id === id)) {
-                // already exists — restore + focus
-                return prev.map((w) =>
-                    w.id === id
-                        ? { ...w, minimized: false, zIndex: ++zCounter }
-                        : w,
-                );
-            }
-            return [...prev, { id, zIndex: ++zCounter, minimized: false }];
-        });
+    const openWindow = useCallback(
+        (id: string) => {
+            setWindows((prev) => {
+                if (prev.find((w) => w.id === id)) {
+                    // already exists — restore + focus
+                    return prev.map((w) =>
+                        w.id === id
+                            ? { ...w, minimized: false, zIndex: ++zCounter }
+                            : w,
+                    );
+                }
+                return [...prev, { id, zIndex: ++zCounter, minimized: false }];
+            });
 
-        if (!windowPids.current[id]) {
-            const def = APPS.find((a) => a.id === id);
-            if (def) {
-                spawnProcess(
-                    def.title,
-                    APP_BURST_TIMES[id] ?? 10,
-                    APP_PRIORITIES[id] ?? 2,
-                    0,
-                );
-                const procs = useKernelStore.getState().processes;
-                const newProc = procs[procs.length - 1];
-                if (newProc) windowPids.current[id] = newProc.pid;
+            if (!windowPids.current[id]) {
+                const def = APPS.find((a) => a.id === id);
+                if (def) {
+                    spawnProcess(
+                        def.title,
+                        APP_BURST_TIMES[id] ?? 10,
+                        APP_PRIORITIES[id] ?? 2,
+                        0,
+                    );
+                    const procs = useKernelStore.getState().processes;
+                    const newProc = procs[procs.length - 1];
+                    if (newProc) windowPids.current[id] = newProc.pid;
+                }
+            } else {
+                const pid = windowPids.current[id];
+                if (pid !== undefined) {
+                    useKernelStore.getState().updateState(pid, "running");
+                }
             }
-        } else {
+        },
+        [spawnProcess],
+    );
+
+    const closeWindow = useCallback(
+        (id: string) => {
+            setWindows((prev) => prev.filter((w) => w.id !== id));
+
             const pid = windowPids.current[id];
             if (pid !== undefined) {
-                useKernelStore.getState().updateState(pid, "running");
+                killProcess(pid);
+                delete windowPids.current[id];
             }
-        }
-    }, [spawnProcess]);
-
-    const closeWindow = useCallback((id: string) => {
-        setWindows((prev) => prev.filter((w) => w.id !== id));
-
-        const pid = windowPids.current[id];
-        if (pid !== undefined) {
-            killProcess(pid);
-            delete windowPids.current[id];
-        }
-    }, [killProcess]);
+        },
+        [killProcess],
+    );
 
     const minimizeWindow = useCallback((id: string) => {
         setWindows((prev) =>
