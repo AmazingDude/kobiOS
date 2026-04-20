@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
     PCB,
+    ProcessState,
     SchedulerConfig,
     GanttEntry,
     SchedulerMetrics,
@@ -25,6 +26,7 @@ interface KernelStore {
         priority?: number,
         arrival?: number,
     ) => void;
+    updateState: (pid: number, state: ProcessState) => void;
     killProcess: (pid: number) => void;
     runScheduler: () => void;
     setSchedulerConfig: (config: SchedulerConfig) => void;
@@ -40,6 +42,11 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
 
     spawnProcess: (name, burst, priority = 1, arrival = 0) => {
         pm.createProcess(name, burst, priority, arrival);
+        set({ processes: pm.getAllProcesses() });
+    },
+
+    updateState: (pid, state) => {
+        pm.updateState(pid, state);
         set({ processes: pm.getAllProcesses() });
     },
 

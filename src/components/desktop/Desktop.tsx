@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { TopBar } from "./TopBar";
 import { Taskbar } from "./Taskbar";
 import { Window } from "./Window";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useKernelStore } from "../../store/kernelStore";
 
 interface AppDef {
     id: string;
@@ -79,6 +80,24 @@ const APPS: AppDef[] = [
     },
 ];
 
+const APP_BURST_TIMES: Record<string, number> = {
+    "process-manager": 8,
+    scheduler: 20,
+    memory: 15,
+    sync: 12,
+    terminal: 5,
+    notepad: 4,
+};
+
+const APP_PRIORITIES: Record<string, number> = {
+    "process-manager": 5,
+    scheduler: 4,
+    memory: 4,
+    sync: 3,
+    terminal: 3,
+    notepad: 2,
+};
+
 const DESKTOP_ICONS = [
     {
         id: "process-manager",
@@ -116,6 +135,9 @@ export function Desktop() {
     const [windows, setWindows] = useState<WinState[]>([]);
     const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
     const wallpaperUrl = `${import.meta.env.BASE_URL}wallpaper.png`;
+    const spawnProcess = useKernelStore((s) => s.spawnProcess);
+    const killProcess = useKernelStore((s) => s.killProcess);
+    const windowPids = useRef<Record<string, number>>({});
 
     useEffect(() => {
         const img = new Image();
@@ -136,16 +158,47 @@ export function Desktop() {
             }
             return [...prev, { id, zIndex: ++zCounter, minimized: false }];
         });
-    }, []);
+
+        if (!windowPids.current[id]) {
+            const def = APPS.find((a) => a.id === id);
+            if (def) {
+                spawnProcess(
+                    def.title,
+                    APP_BURST_TIMES[id] ?? 10,
+                    APP_PRIORITIES[id] ?? 2,
+                    0,
+                );
+                const procs = useKernelStore.getState().processes;
+                const newProc = procs[procs.length - 1];
+                if (newProc) windowPids.current[id] = newProc.pid;
+            }
+        } else {
+            const pid = windowPids.current[id];
+            if (pid !== undefined) {
+                useKernelStore.getState().updateState(pid, "running");
+            }
+        }
+    }, [spawnProcess]);
 
     const closeWindow = useCallback((id: string) => {
         setWindows((prev) => prev.filter((w) => w.id !== id));
-    }, []);
+
+        const pid = windowPids.current[id];
+        if (pid !== undefined) {
+            killProcess(pid);
+            delete windowPids.current[id];
+        }
+    }, [killProcess]);
 
     const minimizeWindow = useCallback((id: string) => {
         setWindows((prev) =>
             prev.map((w) => (w.id === id ? { ...w, minimized: true } : w)),
         );
+
+        const pid = windowPids.current[id];
+        if (pid !== undefined) {
+            useKernelStore.getState().updateState(pid, "waiting");
+        }
     }, []);
 
     const focusWindow = useCallback((id: string) => {
@@ -156,6 +209,11 @@ export function Desktop() {
                     : w,
             ),
         );
+
+        const pid = windowPids.current[id];
+        if (pid !== undefined) {
+            useKernelStore.getState().updateState(pid, "running");
+        }
     }, []);
 
     const openIds = windows.map((w) => w.id);
