@@ -151,8 +151,8 @@ export function Window({
                         width: isMaximized ? "100vw" : size.w,
                         height: isMaximized ? "calc(100vh - 64px)" : size.h,
                         zIndex,
-                        border: `1px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
-                        borderRadius: 4,
+                        border: `2px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
+                        borderRadius: 10,
                     }}
                     data-active={isActive ? "true" : "false"}
                     onMouseDown={() => onFocus(id)}
