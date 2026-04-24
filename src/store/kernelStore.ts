@@ -42,6 +42,7 @@ interface KernelStore {
         burst: number,
         priority?: number,
         arrival?: number,
+        isProtected?: boolean,
     ) => void;
     updateState: (pid: number, state: ProcessState) => void;
     killProcess: (pid: number) => void;
@@ -71,8 +72,20 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
     semaphoreState: mutex.getState(),
     semaphoreValue: semaphore.getValue(),
 
-    spawnProcess: (name, burst, priority = 1, arrival = 0) => {
-        const pcb = pm.createProcess(name, burst, priority, arrival);
+    spawnProcess: (
+        name,
+        burst,
+        priority = 1,
+        arrival = 0,
+        isProtected = false,
+    ) => {
+        const pcb = pm.createProcess(
+            name,
+            burst,
+            priority,
+            arrival,
+            isProtected,
+        );
         const pages = Math.floor(Math.random() * 4) + 1;
         mm.allocatePages(pcb.pid, pages, pcb.color);
         const stats = mm.getStats();
@@ -91,6 +104,7 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
     },
 
     killProcess: (pid) => {
+        if (pm.isProtected(pid)) return;
         pm.killProcess(pid);
         mm.deallocatePages(pid);
         const stats = mm.getStats();
@@ -109,7 +123,8 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
 
         for (const entry of gantt) {
             const prev = completionByPid.get(entry.pid) ?? 0;
-            if (entry.endTime > prev) completionByPid.set(entry.pid, entry.endTime);
+            if (entry.endTime > prev)
+                completionByPid.set(entry.pid, entry.endTime);
         }
 
         for (const p of active) {
@@ -134,13 +149,13 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
             processStates: updatedProcesses
                 .filter((p) => p.state !== "terminated")
                 .map((p) => ({
-                pid: p.pid,
-                name: p.name,
-                waitingTime: p.waitingTime,
-                turnaroundTime: p.turnaroundTime,
-                completionTime: p.completionTime ?? 0,
-                responseTime: 0,
-            })),
+                    pid: p.pid,
+                    name: p.name,
+                    waitingTime: p.waitingTime,
+                    turnaroundTime: p.turnaroundTime,
+                    completionTime: p.completionTime ?? 0,
+                    responseTime: 0,
+                })),
             ranAt: Date.now(),
         };
         set({
@@ -157,7 +172,8 @@ export const useKernelStore = create<KernelStore>((set, get) => ({
     },
 
     allocateMemory: (pid, numPages) => {
-        const color = get().processes.find((p) => p.pid === pid)?.color ?? "#6366f1";
+        const color =
+            get().processes.find((p) => p.pid === pid)?.color ?? "#6366f1";
         mm.allocatePages(pid, numPages, color);
         const stats = mm.getStats();
         set({

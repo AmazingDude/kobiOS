@@ -21,12 +21,14 @@ export class ProcessManager {
         burstTime: number,
         priority: number = 1,
         arrivalTime: number = 0,
+        isProtected: boolean = false,
     ): PCB {
         const pid = pidCounter++;
         const pcb: PCB = {
             pid,
             name,
             state: "new",
+            isProtected,
             priority,
             burstTime,
             remainingTime: burstTime,
@@ -54,7 +56,13 @@ export class ProcessManager {
 
     killProcess(pid: number): void {
         const pcb = this.processes.get(pid);
-        if (pcb) pcb.state = "terminated";
+        if (!pcb) return;
+        if (pcb.isProtected) return;
+        pcb.state = "terminated";
+    }
+
+    isProtected(pid: number): boolean {
+        return this.processes.get(pid)?.isProtected ?? false;
     }
 
     reset(): void {

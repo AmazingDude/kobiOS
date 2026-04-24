@@ -11,6 +11,7 @@ export interface PCB {
     pid: number;
     name: string;
     state: ProcessState;
+    isProtected: boolean;
     priority: number;
     burstTime: number;
     remainingTime: number;

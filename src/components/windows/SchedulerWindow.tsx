@@ -252,6 +252,8 @@ export function SchedulerWindow() {
     const processes = useKernelStore((s) => s.processes);
     const runScheduler = useKernelStore((s) => s.runScheduler);
     const setSchedulerConfig = useKernelStore((s) => s.setSchedulerConfig);
+    const spawnProcess = useKernelStore((s) => s.spawnProcess);
+    const resetAll = useKernelStore((s) => s.resetAll);
 
     const [quantum, setQuantum] = useState(
         schedulerConfig.timeQuantum.toString(),
@@ -283,6 +285,33 @@ export function SchedulerWindow() {
     const handleRun = () => {
         if (activeProcs.length === 0) return;
         runScheduler();
+    };
+
+    const loadWorkload = (preset: "cpu" | "io" | "mixed") => {
+        resetAll();
+
+        if (preset === "cpu") {
+            spawnProcess("CPU-1", 20, 5, 0);
+            spawnProcess("CPU-2", 18, 4, 2);
+            spawnProcess("CPU-3", 22, 5, 1);
+            spawnProcess("CPU-4", 15, 3, 3);
+            return;
+        }
+
+        if (preset === "io") {
+            spawnProcess("IO-1", 4, 2, 0);
+            spawnProcess("IO-2", 3, 2, 1);
+            spawnProcess("IO-3", 5, 1, 0);
+            spawnProcess("IO-4", 2, 2, 2);
+            spawnProcess("IO-5", 4, 1, 3);
+            return;
+        }
+
+        spawnProcess("CPU-A", 16, 5, 0);
+        spawnProcess("IO-A", 3, 2, 1);
+        spawnProcess("CPU-B", 12, 4, 2);
+        spawnProcess("IO-B", 4, 1, 0);
+        spawnProcess("MIX-1", 8, 3, 3);
     };
 
     const ALGO_OPTIONS: { value: SchedulerAlgorithm; label: string }[] = [
@@ -371,6 +400,36 @@ export function SchedulerWindow() {
                         />
                     </div>
                 )}
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span
+                        style={{
+                            color: "var(--color-muted)",
+                            fontSize: 9,
+                            letterSpacing: "0.1em",
+                        }}
+                    >
+                        WORKLOAD PRESETS:
+                    </span>
+                    <button
+                        className="kobi-btn"
+                        onClick={() => loadWorkload("cpu")}
+                    >
+                        [ CPU-bound ]
+                    </button>
+                    <button
+                        className="kobi-btn"
+                        onClick={() => loadWorkload("io")}
+                    >
+                        [ I/O-bound ]
+                    </button>
+                    <button
+                        className="kobi-btn"
+                        onClick={() => loadWorkload("mixed")}
+                    >
+                        [ Mixed ]
+                    </button>
+                </div>
 
                 <button
                     className="kobi-btn"

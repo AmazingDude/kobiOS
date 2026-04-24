@@ -109,7 +109,16 @@ function ProcessRow({ p, onKill }: { p: PCB; onKill: (pid: number) => void }) {
                 />
                 {p.pid}
             </td>
-            <td>{p.name}</td>
+            <td>
+                {p.name}
+                {p.isProtected && (
+                    <span
+                        style={{ marginLeft: 6, fontSize: 9, color: "#83a598" }}
+                    >
+                        ⬡
+                    </span>
+                )}
+            </td>
             <td>
                 <StateBadge state={p.state} />
             </td>
@@ -119,7 +128,7 @@ function ProcessRow({ p, onKill }: { p: PCB; onKill: (pid: number) => void }) {
             <td>{p.arrivalTime}</td>
             <td>{p.waitingTime}</td>
             <td>
-                {p.state !== "terminated" && (
+                {p.state !== "terminated" && !p.isProtected && (
                     <button
                         className="kobi-btn kobi-btn-danger"
                         onClick={() => onKill(p.pid)}
@@ -127,6 +136,17 @@ function ProcessRow({ p, onKill }: { p: PCB; onKill: (pid: number) => void }) {
                     >
                         kill
                     </button>
+                )}
+                {p.isProtected && (
+                    <span
+                        style={{
+                            fontSize: 9,
+                            color: "var(--color-muted)",
+                            letterSpacing: "0.08em",
+                        }}
+                    >
+                        [protected]
+                    </span>
                 )}
             </td>
         </tr>

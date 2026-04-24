@@ -189,7 +189,11 @@ export function Desktop() {
 
             const pid = windowPids.current[id];
             if (pid !== undefined) {
-                killProcess(pid);
+                const procs = useKernelStore.getState().processes;
+                const proc = procs.find((p) => p.pid === pid);
+                if (proc && !proc.isProtected) {
+                    killProcess(pid);
+                }
                 delete windowPids.current[id];
             }
         },

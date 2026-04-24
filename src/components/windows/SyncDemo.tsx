@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useKernelStore } from "../../store/kernelStore";
 
 interface LogEntry {
     id: number;
@@ -235,9 +236,6 @@ function useProducerConsumer(mode: SyncMode, simState: SimState) {
     >("idle");
     const [pOps, setPOps] = useState(0);
     const [cOps, setCOps] = useState(0);
-    const [mutex, setMutex] = useState(false); // mutex locked
-    const [empty, setEmpty] = useState(BUFFER_SIZE); // semaphore: empty slots
-    const [full, setFull] = useState(0); // semaphore: full slots
     const [raceDetected, setRaceDetected] = useState(false);
     const tickRef = useRef(0);
     const idRef = useRef(1);
@@ -315,62 +313,56 @@ function useProducerConsumer(mode: SyncMode, simState: SimState) {
 
         const pInterval = setInterval(() => {
             tickRef.current++;
-            setEmpty((e) => {
-                if (e === 0) {
+            setBuffer((buf) => {
+                const empty = BUFFER_SIZE - buf.length;
+                if (empty === 0) {
                     setPState("blocked");
                     addLog(
                         "producer",
                         "wait(empty) — buffer full, blocking...",
                     );
-                    setFull((f) => f); // no change
-                    return e;
+                    return buf;
                 }
-                setMutex(true);
+
+                useKernelStore.getState().acquireMutex(1);
                 setPState("running");
-                setBuffer((buf) => {
-                    const item = Math.floor(Math.random() * 99) + 1;
-                    const next = [...buf, item];
-                    addLog(
-                        "producer",
-                        `produced item=${item} → buffer[${buf.length}]  mutex=locked`,
-                    );
-                    setPOps((n) => n + 1);
-                    setEmpty((ev) => Math.max(0, ev - 1));
-                    setFull((fv) => Math.min(BUFFER_SIZE, fv + 1));
-                    setMutex(false);
-                    return next;
-                });
-                return e - 1;
+
+                const item = Math.floor(Math.random() * 99) + 1;
+                const next = [...buf, item];
+                addLog(
+                    "producer",
+                    `produced item=${item} → buffer[${buf.length}]  mutex=locked`,
+                );
+                setPOps((n) => n + 1);
+                useKernelStore.getState().releaseMutex(1);
+                return next;
             });
         }, 800);
 
         const cInterval = setInterval(() => {
             tickRef.current++;
-            setFull((f) => {
-                if (f === 0) {
+            setBuffer((buf) => {
+                const full = buf.length;
+                if (full === 0) {
                     setCState("blocked");
                     addLog(
                         "consumer",
                         "wait(full) — buffer empty, blocking...",
                     );
-                    return f;
+                    return buf;
                 }
-                setMutex(true);
+
+                useKernelStore.getState().acquireMutex(2);
                 setCState("running");
-                setBuffer((buf) => {
-                    if (buf.length === 0) return buf;
-                    const item = buf[0];
-                    addLog(
-                        "consumer",
-                        `consumed item=${item} ← buffer[0]  mutex=locked`,
-                    );
-                    setCOps((n) => n + 1);
-                    setEmpty((ev) => Math.min(BUFFER_SIZE, ev + 1));
-                    setFull((fv) => Math.max(0, fv - 1));
-                    setMutex(false);
-                    return buf.slice(1);
-                });
-                return f - 1;
+
+                const item = buf[0];
+                addLog(
+                    "consumer",
+                    `consumed item=${item} ← buffer[0]  mutex=locked`,
+                );
+                setCOps((n) => n + 1);
+                useKernelStore.getState().releaseMutex(2);
+                return buf.slice(1);
             });
         }, 600);
 
@@ -396,9 +388,6 @@ function useProducerConsumer(mode: SyncMode, simState: SimState) {
         setCState("idle");
         setPOps(0);
         setCOps(0);
-        setMutex(false);
-        setEmpty(BUFFER_SIZE);
-        setFull(0);
         setRaceDetected(false);
     }, []);
 
@@ -409,30 +398,18 @@ function useProducerConsumer(mode: SyncMode, simState: SimState) {
         cState,
         pOps,
         cOps,
-        mutex,
-        empty,
-        full,
         raceDetected,
         reset,
     };
 }
 
 export function SyncDemo() {
+    const semaphoreState = useKernelStore((s) => s.semaphoreState);
+    const semaphoreValue = useKernelStore((s) => s.semaphoreValue);
     const [mode, setMode] = useState<SyncMode>("sync");
     const [simState, setSimState] = useState<SimState>("idle");
-    const {
-        buffer,
-        logs,
-        pState,
-        cState,
-        pOps,
-        cOps,
-        mutex,
-        empty,
-        full,
-        raceDetected,
-        reset,
-    } = useProducerConsumer(mode, simState);
+    const { buffer, logs, pState, cState, pOps, cOps, raceDetected, reset } =
+        useProducerConsumer(mode, simState);
 
     const handleRun = () => {
         if (simState === "running") {
@@ -611,18 +588,18 @@ export function SyncDemo() {
                     >
                         <SemaphoreBox
                             name="mutex"
-                            value={mutex ? 0 : 1}
-                            locked={mutex}
+                            value={semaphoreState.locked ? 0 : 1}
+                            locked={semaphoreState.locked}
                         />
                         <SemaphoreBox
                             name="empty"
-                            value={empty}
-                            locked={empty === 0}
+                            value={BUFFER_SIZE - buffer.length}
+                            locked={BUFFER_SIZE - buffer.length === 0}
                         />
                         <SemaphoreBox
                             name="full"
-                            value={full}
-                            locked={full === 0}
+                            value={semaphoreValue}
+                            locked={semaphoreValue === 0}
                         />
                     </div>
                 )}

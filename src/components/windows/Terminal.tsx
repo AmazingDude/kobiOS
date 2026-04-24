@@ -129,6 +129,13 @@ Available commands:
                             text: `kill: PID ${pid} already terminated`,
                         },
                     ];
+                if (target.isProtected)
+                    return [
+                        {
+                            type: "error",
+                            text: `kill: PID ${pid} (${target.name}): operation not permitted`,
+                        },
+                    ];
                 killProcess(pid);
                 return [
                     {

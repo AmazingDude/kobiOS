@@ -95,9 +95,9 @@ export function BootScreen({ onComplete }: BootScreenProps) {
     useEffect(() => {
         if (seeded.current) return;
         seeded.current = true;
-        spawnProcess("init", 4, 1, 0);
-        spawnProcess("SystemD", 8, 2, 0);
-        spawnProcess("kDesktop", 12, 3, 0);
+        spawnProcess("init", 4, 1, 0, true);
+        spawnProcess("SystemD", 8, 2, 0, true);
+        spawnProcess("kDesktop", 12, 3, 0, true);
     }, [spawnProcess]);
 
     const lineStyle = (cls: string): CSSProperties => {
