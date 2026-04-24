@@ -133,6 +133,11 @@ let zCounter = 100;
 export function Desktop() {
     const [windows, setWindows] = useState<WinState[]>([]);
     const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
+    const [tilingMode, setTilingMode] = useState(false);
+    const [viewport, setViewport] = useState({
+        w: window.innerWidth,
+        h: window.innerHeight,
+    });
     const wallpaperUrl = `${import.meta.env.BASE_URL}wallpaper.png`;
     const processes = useKernelStore((s) => s.processes);
     const spawnProcess = useKernelStore((s) => s.spawnProcess);
@@ -145,6 +150,14 @@ export function Desktop() {
         img.onerror = () => setWallpaperLoaded(false);
         img.src = wallpaperUrl;
     }, [wallpaperUrl]);
+
+    useEffect(() => {
+        const onResize = () => {
+            setViewport({ w: window.innerWidth, h: window.innerHeight });
+        };
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
 
     // If a mapped process is terminated externally, close its window.
     useEffect(() => {
@@ -279,6 +292,41 @@ export function Desktop() {
 
     const openIds = windows.map((w) => w.id);
     const minimizedIds = windows.filter((w) => w.minimized).map((w) => w.id);
+    const visibleWindows = windows.filter((w) => !w.minimized);
+
+    const tiledRects: Record<
+        string,
+        { x: number; y: number; w: number; h: number }
+    > = {};
+    if (tilingMode && visibleWindows.length > 0) {
+        const count = visibleWindows.length;
+        const cols = Math.ceil(Math.sqrt(count));
+        const rows = Math.ceil(count / cols);
+        const pad = 8;
+        const gap = 8;
+        const topOffset = 28;
+        const usableW = viewport.w - pad * 2;
+        const usableH = viewport.h - topOffset - pad * 2;
+        const tileW = Math.max(
+            320,
+            Math.floor((usableW - gap * (cols - 1)) / cols),
+        );
+        const tileH = Math.max(
+            220,
+            Math.floor((usableH - gap * (rows - 1)) / rows),
+        );
+
+        visibleWindows.forEach((win, i) => {
+            const row = Math.floor(i / cols);
+            const col = i % cols;
+            tiledRects[win.id] = {
+                x: pad + col * (tileW + gap),
+                y: topOffset + pad + row * (tileH + gap),
+                w: tileW,
+                h: tileH,
+            };
+        });
+    }
 
     // The "active" window is the one with the highest z-index that is not minimized
     const activeWin =
@@ -352,6 +400,8 @@ export function Desktop() {
                 onWindowClick={focusWindow}
                 onWindowRestore={focusWindow}
                 onWindowMinimize={minimizeWindow}
+                tilingMode={tilingMode}
+                onToggleTiling={() => setTilingMode((v) => !v)}
             />
 
             {/* Desktop icons — left column */}
@@ -443,6 +493,10 @@ export function Desktop() {
                             zIndex={win.zIndex}
                             isActive={activeWin === win.id}
                             isMinimized={win.minimized}
+                            isTiled={tilingMode}
+                            tiledRect={
+                                tilingMode ? tiledRects[win.id] : undefined
+                            }
                             onClose={closeWindow}
                             onMinimize={minimizeWindow}
                             onFocus={focusWindow}

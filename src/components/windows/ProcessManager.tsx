@@ -32,6 +32,46 @@ function SpawnForm() {
     const [priority, setPri] = useState("1");
     const [arrival, setArrival] = useState("0");
 
+    const nudge = (
+        value: string,
+        setter: (v: string) => void,
+        delta: number,
+        min: number,
+    ) => {
+        const base = parseInt(value);
+        const next = Math.max(min, (isNaN(base) ? min : base) + delta);
+        setter(String(next));
+    };
+
+    const Stepper = ({
+        value,
+        setter,
+        min,
+    }: {
+        value: string;
+        setter: (v: string) => void;
+        min: number;
+    }) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <button
+                type="button"
+                className="kobi-btn"
+                onClick={() => nudge(value, setter, -1, min)}
+                style={{ padding: "0 5px", height: 18, fontSize: 9 }}
+            >
+                -
+            </button>
+            <button
+                type="button"
+                className="kobi-btn"
+                onClick={() => nudge(value, setter, 1, min)}
+                style={{ padding: "0 5px", height: 18, fontSize: 9 }}
+            >
+                +
+            </button>
+        </div>
+    );
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const b = parseInt(burst);
@@ -68,6 +108,7 @@ function SpawnForm() {
                 onChange={(e) => setBurst(e.target.value)}
                 style={{ width: 64 }}
             />
+            <Stepper value={burst} setter={setBurst} min={1} />
             <input
                 className="kobi-input"
                 placeholder="prio"
@@ -77,6 +118,7 @@ function SpawnForm() {
                 onChange={(e) => setPri(e.target.value)}
                 style={{ width: 54 }}
             />
+            <Stepper value={priority} setter={setPri} min={1} />
             <input
                 className="kobi-input"
                 placeholder="arrival"
@@ -86,6 +128,7 @@ function SpawnForm() {
                 onChange={(e) => setArrival(e.target.value)}
                 style={{ width: 64 }}
             />
+            <Stepper value={arrival} setter={setArrival} min={0} />
             <button className="kobi-btn" type="submit">
                 + Spawn
             </button>

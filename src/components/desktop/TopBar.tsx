@@ -9,6 +9,8 @@ interface TopBarProps {
     onWindowClick: (id: string) => void;
     onWindowRestore: (id: string) => void;
     onWindowMinimize: (id: string) => void;
+    tilingMode: boolean;
+    onToggleTiling: () => void;
 }
 
 export function TopBar({
@@ -18,6 +20,8 @@ export function TopBar({
     onWindowClick,
     onWindowRestore,
     onWindowMinimize,
+    tilingMode,
+    onToggleTiling,
 }: TopBarProps) {
     const processes = useKernelStore((s) => s.processes);
     const [clock, setClock] = useState(() =>
@@ -112,6 +116,24 @@ export function TopBar({
                         </button>
                     ))}
                 </div>
+                <button
+                    onClick={onToggleTiling}
+                    style={{
+                        background: "none",
+                        border: "1px solid var(--color-subtle)",
+                        borderRadius: 2,
+                        cursor: "pointer",
+                        padding: "0 6px",
+                        height: 18,
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: tilingMode ? "#b8bb26" : "var(--color-muted)",
+                        letterSpacing: "0.08em",
+                    }}
+                    title="Toggle tiling mode"
+                >
+                    {tilingMode ? "tile:on" : "tile:off"}
+                </button>
 
                 {/* Open window chips */}
                 {openWindows.length > 0 && (

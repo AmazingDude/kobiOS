@@ -11,6 +11,8 @@ interface WindowProps {
     zIndex: number;
     isActive?: boolean;
     isMinimized?: boolean;
+    isTiled?: boolean;
+    tiledRect?: { x: number; y: number; w: number; h: number };
     onClose: (id: string) => void;
     onMinimize: (id: string) => void;
     onFocus: (id: string) => void;
@@ -25,6 +27,8 @@ export function Window({
     zIndex,
     isActive = false,
     isMinimized = false,
+    isTiled = false,
+    tiledRect,
     onClose,
     onMinimize,
     onFocus,
@@ -48,9 +52,9 @@ export function Window({
     // Drag logic
     const handleTitleMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
-        if (isMaximized) return;
         e.preventDefault();
         onFocus(id);
+        if (isMaximized || isTiled) return;
         dragRef.current = {
             startX: e.clientX,
             startY: e.clientY,
@@ -61,7 +65,7 @@ export function Window({
 
     const handleResizeMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
-        if (isMaximized) return;
+        if (isMaximized || isTiled) return;
         e.preventDefault();
         e.stopPropagation();
         onFocus(id);
@@ -106,6 +110,12 @@ export function Window({
         };
     }, []);
 
+    useEffect(() => {
+        if (!isTiled || !tiledRect) return;
+        setPos({ x: tiledRect.x, y: tiledRect.y });
+        setSize({ w: tiledRect.w, h: tiledRect.h });
+    }, [isTiled, tiledRect]);
+
     return (
         <AnimatePresence propagate>
             {!isMinimized && (
@@ -127,10 +137,26 @@ export function Window({
                     whileTap={{ scale: 0.998 }}
                     layoutId={id}
                     style={{
-                        left: isMaximized ? 0 : pos.x,
-                        top: isMaximized ? 28 : pos.y,
-                        width: isMaximized ? "100vw" : size.w,
-                        height: isMaximized ? "calc(100vh - 28px)" : size.h,
+                        left: isTiled
+                            ? (tiledRect?.x ?? 0)
+                            : isMaximized
+                              ? 0
+                              : pos.x,
+                        top: isTiled
+                            ? (tiledRect?.y ?? 28)
+                            : isMaximized
+                              ? 28
+                              : pos.y,
+                        width: isTiled
+                            ? (tiledRect?.w ?? size.w)
+                            : isMaximized
+                              ? "100vw"
+                              : size.w,
+                        height: isTiled
+                            ? (tiledRect?.h ?? size.h)
+                            : isMaximized
+                              ? "calc(100vh - 28px)"
+                              : size.h,
                         zIndex,
                         border: `2px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
                         borderRadius: 10,
@@ -144,8 +170,17 @@ export function Window({
                         onMouseDown={handleTitleMouseDown}
                         style={{ background: "rgba(29, 32, 33, 0.95)" }}
                     >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div className="window-controls" style={{ marginRight: 4 }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                            }}
+                        >
+                            <div
+                                className="window-controls"
+                                style={{ marginRight: 4 }}
+                            >
                                 <button
                                     className="window-btn window-btn-close"
                                     onClick={(e) => {
@@ -163,7 +198,10 @@ export function Window({
                                     title="Minimize"
                                 />
                             </div>
-                            <span className="window-title" style={{ color: "#fabd2f" }}>
+                            <span
+                                className="window-title"
+                                style={{ color: "#fabd2f" }}
+                            >
                                 {title}
                             </span>
                         </div>
@@ -184,7 +222,7 @@ export function Window({
                         {children}
                     </div>
 
-                    {!isMaximized && (
+                    {!isMaximized && !isTiled && (
                         <div
                             onMouseDown={handleResizeMouseDown}
                             style={{
