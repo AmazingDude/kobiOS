@@ -171,6 +171,9 @@ export function Desktop() {
 
     // If kernel state is reset while windows stay open, recreate missing process entries.
     useEffect(() => {
+        // Only auto-rebuild processes after a full reset.
+        if (processes.length !== 0) return;
+
         for (const win of windows) {
             const mappedPid = windowPids.current[win.id];
             const hasMappedProcess =
