@@ -135,6 +135,7 @@ export function Desktop() {
     const [windows, setWindows] = useState<WinState[]>([]);
     const [wallpaperLoaded, setWallpaperLoaded] = useState(false);
     const wallpaperUrl = `${import.meta.env.BASE_URL}wallpaper.png`;
+    const processes = useKernelStore((s) => s.processes);
     const spawnProcess = useKernelStore((s) => s.spawnProcess);
     const killProcess = useKernelStore((s) => s.killProcess);
     const windowPids = useRef<Record<string, number>>({});
@@ -145,6 +146,54 @@ export function Desktop() {
         img.onerror = () => setWallpaperLoaded(false);
         img.src = wallpaperUrl;
     }, [wallpaperUrl]);
+
+    // If a mapped process is terminated externally, close its window.
+    useEffect(() => {
+        const terminatedWindowIds = windows
+            .filter((w) => {
+                const pid = windowPids.current[w.id];
+                if (pid === undefined) return false;
+                const proc = processes.find((p) => p.pid === pid);
+                return proc?.state === "terminated";
+            })
+            .map((w) => w.id);
+
+        if (terminatedWindowIds.length === 0) return;
+
+        setWindows((prev) =>
+            prev.filter((w) => !terminatedWindowIds.includes(w.id)),
+        );
+
+        for (const id of terminatedWindowIds) {
+            delete windowPids.current[id];
+        }
+    }, [windows, processes]);
+
+    // If kernel state is reset while windows stay open, recreate missing process entries.
+    useEffect(() => {
+        for (const win of windows) {
+            const mappedPid = windowPids.current[win.id];
+            const hasMappedProcess =
+                mappedPid !== undefined &&
+                processes.some((p) => p.pid === mappedPid);
+
+            if (hasMappedProcess) continue;
+
+            const def = APPS.find((a) => a.id === win.id);
+            if (!def) continue;
+
+            spawnProcess(
+                def.title,
+                APP_BURST_TIMES[win.id] ?? 10,
+                APP_PRIORITIES[win.id] ?? 2,
+                0,
+            );
+
+            const procs = useKernelStore.getState().processes;
+            const newProc = procs[procs.length - 1];
+            if (newProc) windowPids.current[win.id] = newProc.pid;
+        }
+    }, [windows, processes, spawnProcess]);
 
     const openWindow = useCallback(
         (id: string) => {
