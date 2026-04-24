@@ -1,38 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useKernelStore } from "../../store/kernelStore";
 import type { MemoryFrame, PageReplacementPolicy } from "../../types";
-
-const TOTAL_FRAMES = 32;
-
-function buildFrames(
-    pids: { pid: number; color: string; name: string }[],
-): MemoryFrame[] {
-    // Seed deterministically: distribute pages, leave ~30% free
-    const allocPerProc = Math.max(
-        1,
-        Math.floor((TOTAL_FRAMES * 0.7) / Math.max(pids.length, 1)),
-    );
-    let frameId = 0;
-    const used: MemoryFrame[] = [];
-
-    for (const p of pids) {
-        for (let pg = 0; pg < Math.min(allocPerProc, 8); pg++) {
-            used.push({
-                frameId: frameId++,
-                pid: p.pid,
-                pageNumber: pg,
-                color: p.color,
-            });
-        }
-    }
-
-    // Fill remaining as free
-    for (let i = used.length; i < TOTAL_FRAMES; i++) {
-        used.push({ frameId: i, pid: null, pageNumber: null, color: null });
-    }
-
-    return used.slice(0, TOTAL_FRAMES);
-}
 
 function FrameGrid({
     frames,
@@ -85,74 +53,22 @@ function FrameGrid({
     );
 }
 
-function Sparkline({ values }: { values: number[] }) {
-    if (values.length < 2) return null;
-    const max = Math.max(...values, 1);
-    const w = 200,
-        h = 40;
-    const pts = values.map((v, i) => {
-        const x = (i / (values.length - 1)) * w;
-        const y = h - (v / max) * h;
-        return `${x},${y}`;
-    });
-    return (
-        <svg width={w} height={h} style={{ display: "block" }}>
-            <polyline
-                points={pts.join(" ")}
-                fill="none"
-                stroke="var(--color-accent)"
-                strokeWidth={1.5}
-                opacity={0.8}
-            />
-            {values.map((v, i) => (
-                <circle
-                    key={i}
-                    cx={(i / (values.length - 1)) * w}
-                    cy={h - (v / max) * h}
-                    r={2}
-                    fill="var(--color-accent)"
-                    opacity={0.6}
-                />
-            ))}
-        </svg>
-    );
-}
-
 export function MemoryViewer() {
     const processes = useKernelStore((s) => s.processes);
-    // TODO(kobi): Replace local frame/page-fault simulation with kernel-backed memory snapshots once MemoryManager is wired to the store.
-    const [policy, setPolicy] = useState<PageReplacementPolicy>("FIFO");
+    const memoryFrames = useKernelStore((s) => s.memoryFrames);
+    const memoryStats = useKernelStore((s) => s.memoryStats);
+    const pageFaults = useKernelStore((s) => s.pageFaults);
+    const setPolicy = useKernelStore((s) => s.setMemoryPolicy);
+    const accessPage = useKernelStore((s) => s.accessPage);
+    const [policy, setLocalPolicy] = useState<PageReplacementPolicy>("FIFO");
     const [selectedPid, setSelectedPid] = useState<number | null>(null);
-    const [pageFaults, setPageFaults] = useState<number[]>([0]);
-    const [tick, setTick] = useState(0);
-
-    // Simulate page fault activity
-    useEffect(() => {
-        const id = setInterval(() => {
-            if (processes.filter((p) => p.state !== "terminated").length > 0) {
-                setPageFaults((prev) => {
-                    const next = [...prev, Math.floor(Math.random() * 4)].slice(
-                        -20,
-                    );
-                    return next;
-                });
-            }
-            setTick((t) => t + 1);
-        }, 1200);
-        return () => clearInterval(id);
-    }, [processes]);
 
     const activeProcs = processes
         .filter((p) => p.state !== "terminated")
         .map((p) => ({ pid: p.pid, color: p.color, name: p.name }));
 
-    const frames = buildFrames(activeProcs);
-    const usedFrames = frames.filter((f) => f.pid !== null).length;
-    const freeFrames = TOTAL_FRAMES - usedFrames;
-    const totalPageFaults = pageFaults.reduce((a, b) => a + b, 0);
-
     const selectedProc = activeProcs.find((p) => p.pid === selectedPid);
-    const selectedFrames = frames.filter((f) => f.pid === selectedPid);
+    const selectedFrames = memoryFrames.filter((f) => f.pid === selectedPid);
 
     return (
         <div
@@ -189,7 +105,10 @@ export function MemoryViewer() {
                     <button
                         key={p}
                         className="kobi-btn"
-                        onClick={() => setPolicy(p)}
+                        onClick={() => {
+                            setLocalPolicy(p);
+                            setPolicy(p);
+                        }}
                         style={{
                             background:
                                 policy === p
@@ -204,10 +123,23 @@ export function MemoryViewer() {
                         {p}
                     </button>
                 ))}
+                <button
+                    className="kobi-btn"
+                    onClick={() =>
+                        accessPage(
+                            selectedPid ?? 1,
+                            Math.floor(Math.random() * 8),
+                        )
+                    }
+                >
+                    Simulate Access
+                </button>
                 <div style={{ flex: 1 }} />
                 <span style={{ fontSize: 9, color: "var(--color-muted)" }}>
-                    tick:{" "}
-                    <span style={{ color: "var(--color-accent)" }}>{tick}</span>
+                    faults:{" "}
+                    <span style={{ color: "var(--color-accent)" }}>
+                        {pageFaults}
+                    </span>
                 </span>
             </div>
 
@@ -223,20 +155,20 @@ export function MemoryViewer() {
                 }}
             >
                 {[
-                    { label: "Total Frames", value: TOTAL_FRAMES },
+                    { label: "Total Frames", value: memoryStats.totalFrames },
                     {
                         label: "Used",
-                        value: usedFrames,
+                        value: memoryStats.usedFrames,
                         style: { color: "#f59e0b" },
                     },
                     {
                         label: "Free",
-                        value: freeFrames,
+                        value: memoryStats.freeFrames,
                         style: { color: "#14b8a6" },
                     },
                     {
                         label: "Page Faults",
-                        value: totalPageFaults,
+                        value: pageFaults,
                         style: { color: "#f97316" },
                     },
                 ].map((s) => (
@@ -319,10 +251,10 @@ export function MemoryViewer() {
                             letterSpacing: "0.1em",
                         }}
                     >
-                        FRAME GRID ({TOTAL_FRAMES} frames)
+                        FRAME GRID ({memoryStats.totalFrames} frames)
                     </div>
                     <FrameGrid
-                        frames={frames}
+                        frames={memoryFrames}
                         selectedPid={selectedPid}
                         onSelect={setSelectedPid}
                     />
@@ -384,25 +316,6 @@ export function MemoryViewer() {
                     </div>
                 )}
 
-                {/* Page fault graph */}
-                {pageFaults.length > 2 && (
-                    <div style={{ padding: "6px 12px 12px" }}>
-                        <div
-                            style={{
-                                fontSize: 9,
-                                color: "var(--color-muted)",
-                                letterSpacing: "0.1em",
-                                marginBottom: 8,
-                                paddingTop: 6,
-                                borderTop: "1px solid rgba(61,53,48,0.4)",
-                            }}
-                        >
-                            PAGE FAULT HISTORY ({policy})
-                        </div>
-                        <Sparkline values={pageFaults} />
-                    </div>
-                )}
-
                 {activeProcs.length === 0 && (
                     <div
                         style={{
@@ -442,7 +355,7 @@ export function MemoryViewer() {
                     <span style={{ color: "var(--color-accent)" }}>
                         {policy}
                     </span>{" "}
-                    | Used: {usedFrames}/{TOTAL_FRAMES} frames
+                    | Used: {memoryStats.usedFrames}/{memoryStats.totalFrames} frames
                 </span>
                 <span style={{ color: "rgba(138,122,106,0.5)" }}>
                     Memory Viewer
