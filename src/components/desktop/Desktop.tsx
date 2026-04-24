@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { TopBar } from "./TopBar";
-import { Taskbar } from "./Taskbar";
 import { Window } from "./Window";
 import { ProcessManager } from "../windows/ProcessManager";
 import { SchedulerWindow } from "../windows/SchedulerWindow";
@@ -32,7 +31,7 @@ interface AppDef {
 const APPS: AppDef[] = [
     {
         id: "process-manager",
-        title: "Process Manager",
+        title: "procfs",
         icon: <Settings size={14} strokeWidth={1.5} />,
         defaultPos: { x: 60, y: 50 },
         defaultSize: { w: 860, h: 500 },
@@ -40,7 +39,7 @@ const APPS: AppDef[] = [
     },
     {
         id: "scheduler",
-        title: "CPU Scheduler",
+        title: "sched",
         icon: <Clock size={14} strokeWidth={1.5} />,
         defaultPos: { x: 120, y: 70 },
         defaultSize: { w: 900, h: 530 },
@@ -48,7 +47,7 @@ const APPS: AppDef[] = [
     },
     {
         id: "memory",
-        title: "Memory Viewer",
+        title: "vmstat",
         icon: <Grid3x3 size={14} strokeWidth={1.5} />,
         defaultPos: { x: 180, y: 90 },
         defaultSize: { w: 780, h: 500 },
@@ -56,7 +55,7 @@ const APPS: AppDef[] = [
     },
     {
         id: "sync",
-        title: "Sync Demo",
+        title: "ipc-demo",
         icon: <RefreshCw size={14} strokeWidth={1.5} />,
         defaultPos: { x: 200, y: 80 },
         defaultSize: { w: 820, h: 560 },
@@ -64,7 +63,7 @@ const APPS: AppDef[] = [
     },
     {
         id: "terminal",
-        title: "Terminal",
+        title: "tty0",
         icon: <TerminalIcon size={14} strokeWidth={1.5} />,
         defaultPos: { x: 240, y: 100 },
         defaultSize: { w: 700, h: 440 },
@@ -72,7 +71,7 @@ const APPS: AppDef[] = [
     },
     {
         id: "notepad",
-        title: "Notepad",
+        title: "nano",
         icon: <FileText size={14} strokeWidth={1.5} />,
         defaultPos: { x: 300, y: 120 },
         defaultSize: { w: 600, h: 420 },
@@ -101,14 +100,14 @@ const APP_PRIORITIES: Record<string, number> = {
 const DESKTOP_ICONS = [
     {
         id: "process-manager",
-        label: "Process\nManager",
+        label: "procfs",
         glyph: "process-manager",
     },
-    { id: "scheduler", label: "CPU\nScheduler", glyph: "scheduler" },
-    { id: "memory", label: "Memory\nViewer", glyph: "memory" },
-    { id: "sync", label: "Sync\nDemo", glyph: "sync" },
-    { id: "terminal", label: "Terminal", glyph: "terminal" },
-    { id: "notepad", label: "Notepad", glyph: "notepad" },
+    { id: "scheduler", label: "sched", glyph: "scheduler" },
+    { id: "memory", label: "vmstat", glyph: "memory" },
+    { id: "sync", label: "ipc-demo", glyph: "sync" },
+    { id: "terminal", label: "tty0", glyph: "terminal" },
+    { id: "notepad", label: "nano", glyph: "notepad" },
 ];
 
 const DESKTOP_ICON_COMPONENTS: Record<
@@ -348,8 +347,11 @@ export function Desktop() {
             {/* TopBar */}
             <TopBar
                 openWindows={openIds}
+                minimizedWindows={minimizedIds}
                 activeWindow={activeWin}
                 onWindowClick={focusWindow}
+                onWindowRestore={focusWindow}
+                onWindowMinimize={minimizeWindow}
             />
 
             {/* Desktop icons — left column */}
@@ -406,7 +408,7 @@ export function Desktop() {
             <div
                 style={{
                     position: "absolute",
-                    bottom: 44,
+                    bottom: 0,
                     right: 20,
                     fontFamily: "var(--font-mono)",
                     fontSize: 10,
@@ -450,17 +452,6 @@ export function Desktop() {
                     );
                 })}
             </AnimatePresence>
-
-            {/* Taskbar */}
-            <Taskbar
-                openWindows={openIds}
-                minimizedWindows={minimizedIds}
-                activeWindow={activeWin}
-                onAppLaunch={openWindow}
-                onWindowRestore={focusWindow}
-                onWindowMinimize={minimizeWindow}
-                onWindowFocus={focusWindow}
-            />
         </motion.div>
     );
 }

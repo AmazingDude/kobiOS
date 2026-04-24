@@ -4,14 +4,20 @@ import { Wifi, Volume2, Bluetooth, BatteryFull } from "lucide-react";
 
 interface TopBarProps {
     openWindows: string[];
+    minimizedWindows: string[];
     activeWindow: string | null;
     onWindowClick: (id: string) => void;
+    onWindowRestore: (id: string) => void;
+    onWindowMinimize: (id: string) => void;
 }
 
 export function TopBar({
     openWindows,
+    minimizedWindows,
     activeWindow,
     onWindowClick,
+    onWindowRestore,
+    onWindowMinimize,
 }: TopBarProps) {
     const processes = useKernelStore((s) => s.processes);
     const [clock, setClock] = useState(() =>
@@ -50,11 +56,12 @@ export function TopBar({
     }, []);
 
     const WINDOW_LABELS: Record<string, string> = {
-        "process-manager": "proc",
+        "process-manager": "procfs",
         scheduler: "sched",
-        memory: "mem",
-        sync: "sync",
-        terminal: "term",
+        memory: "vmstat",
+        sync: "ipc-demo",
+        terminal: "tty0",
+        notepad: "nano",
     };
 
     return (
@@ -108,33 +115,59 @@ export function TopBar({
 
                 {/* Open window chips */}
                 {openWindows.length > 0 && (
-                    <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                        {openWindows.map((id) => (
-                            <button
-                                key={id}
-                                onClick={() => onWindowClick(id)}
-                                style={{
-                                    background:
-                                        activeWindow === id
-                                            ? "rgba(200,146,42,0.15)"
-                                            : "none",
-                                    border: `1px solid ${activeWindow === id ? "rgba(200,146,42,0.4)" : "rgba(61,53,48,0.6)"}`,
-                                    borderRadius: 2,
-                                    padding: "1px 7px",
-                                    cursor: "pointer",
-                                    fontFamily: "var(--font-mono)",
-                                    fontSize: 10,
-                                    color:
-                                        activeWindow === id
-                                            ? "var(--color-accent)"
-                                            : "var(--color-muted)",
-                                    transition: "all 0.12s",
-                                    letterSpacing: "0.06em",
-                                }}
-                            >
-                                {WINDOW_LABELS[id] ?? id}
-                            </button>
-                        ))}
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: 2,
+                            marginLeft: 12,
+                            borderLeft: "1px solid var(--color-subtle)",
+                            paddingLeft: 12,
+                        }}
+                    >
+                        {openWindows.map((id) => {
+                            const isActive = activeWindow === id;
+                            const isMinimized = minimizedWindows.includes(id);
+                            return (
+                                <button
+                                    key={id}
+                                    onClick={() =>
+                                        isMinimized
+                                            ? onWindowRestore(id)
+                                            : isActive
+                                              ? onWindowMinimize(id)
+                                              : onWindowClick(id)
+                                    }
+                                    style={{
+                                        background: isActive
+                                            ? "rgba(184,187,38,0.12)"
+                                            : "transparent",
+                                        border: "none",
+                                        borderBottom: `1px solid ${
+                                            isActive
+                                                ? "#b8bb26"
+                                                : isMinimized
+                                                  ? "var(--color-subtle)"
+                                                  : "transparent"
+                                        }`,
+                                        padding: "0 8px",
+                                        height: 22,
+                                        cursor: "pointer",
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 10,
+                                        color: isActive
+                                            ? "#b8bb26"
+                                            : isMinimized
+                                              ? "var(--color-subtle)"
+                                              : "var(--color-muted)",
+                                        letterSpacing: "0.06em",
+                                        transition: "all 0.1s",
+                                        opacity: isMinimized ? 0.5 : 1,
+                                    }}
+                                >
+                                    {WINDOW_LABELS[id] ?? id}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>

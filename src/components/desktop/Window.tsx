@@ -19,7 +19,6 @@ interface WindowProps {
 export function Window({
     id,
     title,
-    icon,
     children,
     defaultPosition = { x: 80, y: 60 },
     defaultSize = { w: 720, h: 480 },
@@ -32,7 +31,7 @@ export function Window({
 }: WindowProps) {
     const [pos, setPos] = useState(defaultPosition);
     const [size, setSize] = useState(defaultSize);
-    const [isMaximized, setIsMaximized] = useState(false);
+    const [isMaximized] = useState(false);
     const dragRef = useRef<{
         startX: number;
         startY: number;
@@ -44,10 +43,6 @@ export function Window({
         startY: number;
         origW: number;
         origH: number;
-    } | null>(null);
-    const restoreRef = useRef<{
-        pos: { x: number; y: number };
-        size: { w: number; h: number };
     } | null>(null);
 
     // Drag logic
@@ -76,20 +71,6 @@ export function Window({
             origW: size.w,
             origH: size.h,
         };
-    };
-
-    const toggleMaximize = () => {
-        if (!isMaximized) {
-            restoreRef.current = { pos, size };
-            setIsMaximized(true);
-            return;
-        }
-        const restore = restoreRef.current;
-        if (restore) {
-            setPos(restore.pos);
-            setSize(restore.size);
-        }
-        setIsMaximized(false);
     };
 
     useEffect(() => {
@@ -149,7 +130,7 @@ export function Window({
                         left: isMaximized ? 0 : pos.x,
                         top: isMaximized ? 28 : pos.y,
                         width: isMaximized ? "100vw" : size.w,
-                        height: isMaximized ? "calc(100vh - 64px)" : size.h,
+                        height: isMaximized ? "calc(100vh - 28px)" : size.h,
                         zIndex,
                         border: `2px solid ${isActive ? "rgba(235, 219, 178, 0.22)" : "rgba(80, 73, 69, 0.30)"}`,
                         borderRadius: 10,
@@ -163,57 +144,31 @@ export function Window({
                         onMouseDown={handleTitleMouseDown}
                         style={{ background: "rgba(29, 32, 33, 0.95)" }}
                     >
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                            }}
-                        >
-                            {icon && (
-                                <span
-                                    style={{
-                                        color: "var(--color-muted)",
-                                        display: "flex",
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div className="window-controls" style={{ marginRight: 4 }}>
+                                <button
+                                    className="window-btn window-btn-close"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onClose(id);
                                     }}
-                                >
-                                    {icon}
-                                </span>
-                            )}
-                            <span
-                                className="window-title"
-                                style={{ color: "#fabd2f" }}
-                            >
+                                    title="Close"
+                                />
+                                <button
+                                    className="window-btn window-btn-min"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onMinimize(id);
+                                    }}
+                                    title="Minimize"
+                                />
+                            </div>
+                            <span className="window-title" style={{ color: "#fabd2f" }}>
                                 {title}
                             </span>
                         </div>
 
-                        <div className="window-controls">
-                            <button
-                                className="window-btn window-btn-min"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onMinimize(id);
-                                }}
-                                title="Minimize"
-                            />
-                            <button
-                                className="window-btn window-btn-max"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleMaximize();
-                                }}
-                                title={isMaximized ? "Restore" : "Maximize"}
-                            />
-                            <button
-                                className="window-btn window-btn-close"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClose(id);
-                                }}
-                                title="Close"
-                            />
-                        </div>
+                        <div style={{ width: 1 }} />
                     </div>
 
                     {/* Body */}

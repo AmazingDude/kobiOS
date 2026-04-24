@@ -248,42 +248,6 @@ body::before {
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-.taskbar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 36px;
-    background: var(--color-bar-bg);
-    border-top: 1px solid var(--color-panel-border);
-    display: flex;
-    align-items: center;
-    padding: 0 14px;
-    gap: 6px;
-    z-index: 9000;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-muted);
-    /* CRITICAL: no background-image, no gradient, no backdrop-filter on taskbar */
-}
-
-.taskbar-btn {
-    font-size: 10px;
-    font-family: var(--font-mono);
-    color: var(--color-muted);
-    padding: 3px 8px;
-    border: 1px solid transparent;
-    border-radius: 2px;
-    cursor: pointer;
-    background: transparent;
-    transition: all 0.12s;
-    letter-spacing: 0.06em;
-}
-.taskbar-btn:hover,
-.taskbar-btn.active {
-    color: var(--color-foreground);
-}
-
 .boot-screen {
     width: 100vw;
     height: 100vh;
