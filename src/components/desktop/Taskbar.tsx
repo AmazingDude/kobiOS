@@ -139,7 +139,7 @@ export function Taskbar({
                     <span style={{ color: "#a89984" }}>procs: </span>
                     <span style={{ color: "#d3869b" }}>{runningCount}</span>
                 </span>
-                <span style={{ color: "#504945" }}>kobi@kobiOS</span>
+                <span style={{ color: "#504945" }}>kobiOS@Sophos</span>
             </div>
         </div>
     );

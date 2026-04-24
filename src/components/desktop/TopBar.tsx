@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useKernelStore } from "../../store/kernelStore";
+import { Wifi, Volume2, Bluetooth, BatteryFull } from "lucide-react";
 
 interface TopBarProps {
     openWindows: string[];
@@ -57,7 +58,10 @@ export function TopBar({
     };
 
     return (
-        <div className="topbar">
+        <div
+            className="topbar"
+            style={{ userSelect: "none", WebkitUserSelect: "none" }}
+        >
             {/* Left — workspace dots */}
             <div
                 style={{
@@ -145,9 +149,9 @@ export function TopBar({
                 }}
             >
                 <span style={{ color: "var(--color-subtle)" }}>[ </span>
-                <span style={{ color: "#b8bb26" }}>kobi</span>
+                <span style={{ color: "#b8bb26" }}>kobiOS</span>
                 <span style={{ color: "var(--color-muted)" }}>@</span>
-                <span style={{ color: "#83a598" }}>kobiOS</span>
+                <span style={{ color: "#83a598" }}>Sophos</span>
                 <span style={{ color: "var(--color-muted)" }}>:~</span>
                 <span style={{ color: "var(--color-subtle)" }}> ]</span>
             </div>
@@ -177,6 +181,20 @@ export function TopBar({
                 <span style={{ color: "var(--color-muted)" }}>
                     [ PROCS:{" "}
                     <span style={{ color: "#d3869b" }}>{runningCount}</span> ]
+                </span>
+                <span
+                    style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        color: "#83a598",
+                    }}
+                    title="System status"
+                >
+                    <Wifi size={13} strokeWidth={2.4} />
+                    <Volume2 size={13} strokeWidth={2.4} />
+                    <Bluetooth size={13} strokeWidth={2.4} />
+                    <BatteryFull size={13} strokeWidth={2.4} />
                 </span>
                 <span style={{ color: "#fabd2f" }}>[ {clock} ]</span>
             </div>

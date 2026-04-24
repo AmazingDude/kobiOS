@@ -406,7 +406,10 @@ export function Terminal() {
 
     const submit = () => {
         const raw = input.trim();
-        const echoLine: Line = { type: "input", text: `kobi@kobiOS:~$ ${raw}` };
+        const echoLine: Line = {
+            type: "input",
+            text: `kobiOS@Sophos:~$ ${raw}`,
+        };
 
         if (raw === "clear") {
             setHistory([{ type: "system", text: "kobiOS kernel terminal" }]);
@@ -520,8 +523,8 @@ export function Terminal() {
                         gap: 0,
                     }}
                 >
-                    <span style={{ color: "#b8bb26" }}>kobi</span>
-                    <span style={{ color: "#83a598" }}>@kobiOS</span>
+                    <span style={{ color: "#b8bb26" }}>kobiOS</span>
+                    <span style={{ color: "#83a598" }}>@Sophos</span>
                     <span style={{ color: "#ebdbb2" }}>:~$</span>
                 </span>
                 <input
