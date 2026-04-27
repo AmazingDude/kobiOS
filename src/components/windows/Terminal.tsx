@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { useKernelStore } from "../../store/kernelStore";
-import type { SchedulerAlgorithm } from "../../types";
+import type {
+    SchedulerAlgorithm,
+    PageReplacementPolicy,
+    ThreadState,
+} from "../../types";
 
 interface Segment {
     text: string;
@@ -24,24 +28,62 @@ function useTerminal() {
         runScheduler,
         setSchedulerConfig,
         resetAll,
+        spawnThread,
+        setThreadState,
+        tickThreads,
+        ragAllocate,
+        ragRequest,
+        ragRelease,
+        detectDeadlock,
+        resetRAG,
+        loadDeadlockExample,
+        runExperimentSuite,
+        setMemoryPolicy,
     } = store;
 
     const HELP = `
 Available commands:
-  spawn <name> <burst> [priority] [arrival]  — create a process
-  kill <pid>                                  — terminate a process
-  ps                                          — list all processes
-  scheduler <FCFS|RR|PRIORITY_RR|SRJF> [quantum]      — change algorithm
-  run                                         — run scheduler simulation
-  gantt                                       — show last gantt result
-  metrics                                     — show last scheduler metrics
-  reset                                       — reset all processes
-  clear                                       — clear terminal
-    exit                                        — philosophical shutdown attempt
-    neofetch                                    — show kobiOS system info
-  help                                        — this help text
-  uname                                       — system info
-  uptime                                      — fake uptime
+
+  process / scheduling
+    spawn <name> <burst> [priority] [arrival]   create a process
+    kill <pid>                                  terminate a process
+    ps                                          list all processes
+    scheduler <FCFS|RR|PRIORITY_RR|SRJF> [q]    change algorithm
+    aging <on|off>                              toggle priority aging (PRIORITY_RR)
+    run                                         run scheduler simulation
+    gantt                                       show last gantt chart
+    metrics                                     show last scheduler metrics (incl. RT)
+
+  threads
+    threads [pid]                               list threads (all or for pid)
+    tspawn <pid> [name]                         spawn a new thread inside a process
+    ttick <pid>                                 advance the running thread of a process
+    tstate <tid> <ready|running|waiting|terminated>
+                                                set a thread's state
+
+  memory
+    mempolicy <FIFO|LRU|OPTIMAL|CLOCK>          set page-replacement policy
+
+  deadlock (resource allocation graph)
+    rag alloc <pid> <resource>                  allocate resource to process
+    rag req <pid> <resource>                    process requests resource
+    rag release <pid> <resource>                process releases resource
+    rag detect                                  run cycle detection
+    rag example                                 load classic 4-process circular wait
+    rag reset                                   clear the RAG
+
+  experiments
+    bench [quantum]                             run all algorithms x all workloads
+    bench show [metric]                         show comparison table
+
+  misc
+    reset                                       reset everything
+    clear                                       clear terminal
+    exit                                        philosophical shutdown attempt
+    neofetch                                    show kobiOS system info
+    help                                        this help text
+    uname                                       system info
+    uptime                                      fake uptime
 `.trim();
 
     const exec = (raw: string): Line[] => {
@@ -164,6 +206,7 @@ Available commands:
                     parts[2] ?? String(schedulerConfig.timeQuantum),
                 );
                 setSchedulerConfig({
+                    ...schedulerConfig,
                     algorithm: algo,
                     timeQuantum: isNaN(quantum) ? 2 : quantum,
                 });
@@ -229,9 +272,333 @@ Available commands:
                         text: [
                             `  avg waiting time:    ${metrics.averageWaitingTime.toFixed(3)}`,
                             `  avg turnaround time: ${metrics.averageTurnaroundTime.toFixed(3)}`,
+                            `  avg response time:   ${metrics.averageResponseTime.toFixed(3)}`,
                             `  cpu utilization:     ${metrics.cpuUtilization.toFixed(1)}%`,
                             `  throughput:          ${metrics.throughput.toFixed(4)}/tick`,
+                            `  total time:          ${metrics.totalTime}`,
                         ].join("\n"),
+                    },
+                ];
+            }
+
+            case "aging": {
+                const arg = parts[1]?.toLowerCase();
+                if (arg !== "on" && arg !== "off")
+                    return [{ type: "error", text: "usage: aging <on|off>" }];
+                setSchedulerConfig({
+                    ...schedulerConfig,
+                    priorityAging: arg === "on",
+                });
+                return [
+                    {
+                        type: "system",
+                        text: `[OK] priority aging ${arg.toUpperCase()} (threshold=${schedulerConfig.agingThreshold})`,
+                    },
+                ];
+            }
+
+            case "threads": {
+                const filterPid = parts[1] ? parseInt(parts[1]) : undefined;
+                const all = useKernelStore.getState().threads;
+                const list =
+                    filterPid !== undefined && !isNaN(filterPid)
+                        ? all.filter((t) => t.pid === filterPid)
+                        : all;
+                if (list.length === 0)
+                    return [{ type: "output", text: "no threads" }];
+                const header =
+                    "TID  PID  NAME              STATE        PRI  PC    SP    r0  r1";
+                const rows = list.map(
+                    (t) =>
+                        `${String(t.tid).padEnd(4)} ${String(t.pid).padEnd(4)} ${t.name.padEnd(17)} ${t.state.padEnd(12)} ${String(t.priority).padEnd(4)} ${String(t.programCounter).padEnd(5)} ${String(t.stackPointer).padEnd(5)} ${String(t.registers.r0 ?? 0).padEnd(3)} ${t.registers.r1 ?? 0}`,
+                );
+                return [{ type: "output", text: [header, ...rows].join("\n") }];
+            }
+
+            case "tspawn": {
+                const pid = parseInt(parts[1]);
+                if (isNaN(pid))
+                    return [
+                        {
+                            type: "error",
+                            text: "usage: tspawn <pid> [name]",
+                        },
+                    ];
+                const proc = processes.find((p) => p.pid === pid);
+                if (!proc)
+                    return [
+                        {
+                            type: "error",
+                            text: `tspawn: no process with PID ${pid}`,
+                        },
+                    ];
+                const name = parts.slice(2).join(" ") || undefined;
+                spawnThread(pid, name);
+                const newCount =
+                    useKernelStore
+                        .getState()
+                        .threads.filter((t) => t.pid === pid).length;
+                return [
+                    {
+                        type: "system",
+                        text: `[OK] thread spawned in PID ${pid} (now ${newCount} threads)`,
+                    },
+                ];
+            }
+
+            case "ttick": {
+                const pid = parseInt(parts[1]);
+                if (isNaN(pid))
+                    return [{ type: "error", text: "usage: ttick <pid>" }];
+                tickThreads(pid);
+                const running = useKernelStore
+                    .getState()
+                    .threads.find(
+                        (t) => t.pid === pid && t.state === "running",
+                    );
+                return [
+                    {
+                        type: "system",
+                        text: running
+                            ? `[OK] tick PID ${pid}: TID ${running.tid} (${running.name}) PC=${running.programCounter} r0=${running.registers.r0 ?? 0}`
+                            : `[OK] tick PID ${pid}: no running thread`,
+                    },
+                ];
+            }
+
+            case "tstate": {
+                const tid = parseInt(parts[1]);
+                const state = parts[2] as ThreadState;
+                const valid: ThreadState[] = [
+                    "ready",
+                    "running",
+                    "waiting",
+                    "terminated",
+                ];
+                if (isNaN(tid) || !valid.includes(state))
+                    return [
+                        {
+                            type: "error",
+                            text: "usage: tstate <tid> <ready|running|waiting|terminated>",
+                        },
+                    ];
+                setThreadState(tid, state);
+                return [
+                    {
+                        type: "system",
+                        text: `[OK] TID ${tid} -> ${state}`,
+                    },
+                ];
+            }
+
+            case "mempolicy": {
+                const policy = parts[1]?.toUpperCase() as PageReplacementPolicy;
+                const valid: PageReplacementPolicy[] = [
+                    "FIFO",
+                    "LRU",
+                    "OPTIMAL",
+                    "CLOCK",
+                ];
+                if (!valid.includes(policy))
+                    return [
+                        {
+                            type: "error",
+                            text: "usage: mempolicy <FIFO|LRU|OPTIMAL|CLOCK>",
+                        },
+                    ];
+                setMemoryPolicy(policy);
+                const note =
+                    policy === "OPTIMAL"
+                        ? " (live mode falls back to LRU; full OPTIMAL runs in bench/memory simulator)"
+                        : "";
+                return [
+                    {
+                        type: "system",
+                        text: `[OK] page replacement policy = ${policy}${note}`,
+                    },
+                ];
+            }
+
+            case "rag": {
+                const sub = parts[1]?.toLowerCase();
+                switch (sub) {
+                    case "alloc": {
+                        const pid = parseInt(parts[2]);
+                        const res = parts[3];
+                        if (isNaN(pid) || !res)
+                            return [
+                                {
+                                    type: "error",
+                                    text: "usage: rag alloc <pid> <resource>",
+                                },
+                            ];
+                        ragAllocate(pid, res);
+                        return [
+                            {
+                                type: "system",
+                                text: `[OK] ${res} -> PID ${pid}`,
+                            },
+                        ];
+                    }
+                    case "req":
+                    case "request": {
+                        const pid = parseInt(parts[2]);
+                        const res = parts[3];
+                        if (isNaN(pid) || !res)
+                            return [
+                                {
+                                    type: "error",
+                                    text: "usage: rag req <pid> <resource>",
+                                },
+                            ];
+                        ragRequest(pid, res);
+                        return [
+                            {
+                                type: "system",
+                                text: `[OK] PID ${pid} requests ${res}`,
+                            },
+                        ];
+                    }
+                    case "release": {
+                        const pid = parseInt(parts[2]);
+                        const res = parts[3];
+                        if (isNaN(pid) || !res)
+                            return [
+                                {
+                                    type: "error",
+                                    text: "usage: rag release <pid> <resource>",
+                                },
+                            ];
+                        ragRelease(pid, res);
+                        return [
+                            {
+                                type: "system",
+                                text: `[OK] PID ${pid} releases ${res}`,
+                            },
+                        ];
+                    }
+                    case "detect": {
+                        const result = detectDeadlock();
+                        const lines: Line[] = [
+                            {
+                                type: result.deadlocked ? "error" : "system",
+                                text: result.deadlocked
+                                    ? "[!] DEADLOCK DETECTED"
+                                    : "[OK] system is in a SAFE state",
+                            },
+                            { type: "output", text: `   ${result.explanation}` },
+                        ];
+                        if (result.deadlocked && result.victimPid !== null) {
+                            lines.push({
+                                type: "output",
+                                text: `   suggested victim: PID ${result.victimPid}`,
+                            });
+                        }
+                        return lines;
+                    }
+                    case "example": {
+                        loadDeadlockExample();
+                        return [
+                            {
+                                type: "system",
+                                text: "[OK] loaded classic 4-process circular wait — try 'rag detect'",
+                            },
+                        ];
+                    }
+                    case "reset": {
+                        resetRAG();
+                        return [{ type: "system", text: "[OK] RAG cleared" }];
+                    }
+                    default:
+                        return [
+                            {
+                                type: "error",
+                                text: "usage: rag <alloc|req|release|detect|example|reset> ...",
+                            },
+                        ];
+                }
+            }
+
+            case "bench":
+            case "experiment": {
+                const sub = parts[1]?.toLowerCase();
+                if (sub === "show") {
+                    const exp = useKernelStore.getState().latestExperiment;
+                    if (!exp)
+                        return [
+                            {
+                                type: "error",
+                                text: "no experiment results — run 'bench' first",
+                            },
+                        ];
+                    const metric = (parts[2] ?? "wait").toLowerCase();
+                    const labels: Record<string, string> = {
+                        wait: "AvgWait",
+                        turn: "AvgTurn",
+                        rt: "AvgRT",
+                        cpu: "CPU%",
+                        tput: "Tput",
+                    };
+                    const label = labels[metric] ?? "AvgWait";
+                    const workloadIds: string[] = [];
+                    const workloadLabels = new Map<string, string>();
+                    for (const r of exp.rows) {
+                        if (!workloadLabels.has(r.workloadId)) {
+                            workloadLabels.set(r.workloadId, r.workloadLabel);
+                            workloadIds.push(r.workloadId);
+                        }
+                    }
+                    const algos = Array.from(
+                        new Set(exp.rows.map((r) => r.algorithm)),
+                    );
+                    const lines = [
+                        `experiment: ${label}  (lower is better for wait/turn/rt; higher for cpu/tput)`,
+                        `workload         | ${algos.map((a) => a.padEnd(12)).join(" ")}`,
+                        `-`.repeat(20 + algos.length * 13),
+                    ];
+                    for (const wid of workloadIds) {
+                        const cells = algos.map((a) => {
+                            const row = exp.rows.find(
+                                (r) =>
+                                    r.workloadId === wid && r.algorithm === a,
+                            );
+                            if (!row) return "-".padEnd(12);
+                            const m = row.metrics;
+                            const v =
+                                metric === "wait"
+                                    ? m.averageWaitingTime
+                                    : metric === "turn"
+                                      ? m.averageTurnaroundTime
+                                      : metric === "rt"
+                                        ? m.averageResponseTime
+                                        : metric === "cpu"
+                                          ? m.cpuUtilization
+                                          : m.throughput;
+                            return v.toFixed(3).padEnd(12);
+                        });
+                        const label2 = workloadLabels.get(wid) ?? wid;
+                        lines.push(`${label2.padEnd(16)} | ${cells.join(" ")}`);
+                    }
+                    return [{ type: "output", text: lines.join("\n") }];
+                }
+                const quantum = parseInt(parts[1] ?? "");
+                const q = isNaN(quantum)
+                    ? schedulerConfig.timeQuantum
+                    : quantum;
+                const exp = runExperimentSuite(q);
+                const workloadCount = new Set(
+                    exp.rows.map((r) => r.workloadId),
+                ).size;
+                const algoCount = new Set(exp.rows.map((r) => r.algorithm))
+                    .size;
+                return [
+                    {
+                        type: "system",
+                        text: `[OK] ran ${algoCount} algos x ${workloadCount} workloads (q=${q}, ${exp.rows.length} rows)`,
+                    },
+                    {
+                        type: "output",
+                        text: `     try 'bench show wait' | 'bench show rt' | 'bench show cpu' | 'bench show tput'`,
                     },
                 ];
             }

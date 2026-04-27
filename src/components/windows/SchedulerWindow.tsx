@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useKernelStore } from "../../store/kernelStore";
 import type { SchedulerAlgorithm, GanttEntry } from "../../types";
+import { WORKLOADS } from "../../kernel/ExperimentRunner";
 
 function MetricCard({ label, value }: { label: string; value: string }) {
     return (
@@ -32,7 +33,6 @@ function GanttChart({ entries }: { entries: GanttEntry[] }) {
         );
     }
 
-    // Group entries by PID for rows
     const pids = [...new Set(entries.map((e) => e.pid))];
     const maxTime = Math.max(...entries.map((e) => e.endTime));
 
@@ -68,7 +68,6 @@ function GanttChart({ entries }: { entries: GanttEntry[] }) {
                 ))}
             </div>
 
-            {/* Rows */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {pids.map((pid) => {
                     const pidEntries = entries.filter((e) => e.pid === pid);
@@ -84,7 +83,6 @@ function GanttChart({ entries }: { entries: GanttEntry[] }) {
                                 gap: 0,
                             }}
                         >
-                            {/* Label */}
                             <div
                                 style={{
                                     width: 100,
@@ -118,7 +116,6 @@ function GanttChart({ entries }: { entries: GanttEntry[] }) {
                                 </span>
                             </div>
 
-                            {/* Bar track */}
                             <div
                                 style={{
                                     flex: 1,
@@ -200,8 +197,10 @@ function ProcessMetricsTable() {
                     <tr>
                         <th>PID</th>
                         <th>Name</th>
+                        <th>Type</th>
                         <th>Arrival</th>
                         <th>Burst</th>
+                        <th>Response</th>
                         <th>Waiting</th>
                         <th>Turnaround</th>
                     </tr>
@@ -228,8 +227,24 @@ function ProcessMetricsTable() {
                                     {p.pid}
                                 </td>
                                 <td>{p.name}</td>
+                                <td
+                                    style={{
+                                        color:
+                                            p.workloadType === "io"
+                                                ? "#14b8a6"
+                                                : p.workloadType === "mixed"
+                                                  ? "#a855f7"
+                                                  : "#f59e0b",
+                                        fontSize: 9,
+                                    }}
+                                >
+                                    {p.workloadType}
+                                </td>
                                 <td>{p.arrivalTime}</td>
                                 <td>{p.burstTime}</td>
+                                <td style={{ color: "#83a598" }}>
+                                    {p.responseTime}
+                                </td>
                                 <td style={{ color: "#f59e0b" }}>
                                     {p.waitingTime}
                                 </td>
@@ -263,11 +278,12 @@ export function SchedulerWindow() {
     const showQuantum =
         schedulerConfig.algorithm === "RR" ||
         schedulerConfig.algorithm === "PRIORITY_RR";
+    const showAging = schedulerConfig.algorithm === "PRIORITY_RR";
 
     const handleAlgoChange = (algo: SchedulerAlgorithm) => {
         setSchedulerConfig({
+            ...schedulerConfig,
             algorithm: algo,
-            timeQuantum: schedulerConfig.timeQuantum,
         });
     };
 
@@ -276,10 +292,17 @@ export function SchedulerWindow() {
         const n = parseInt(val);
         if (!isNaN(n) && n >= 1) {
             setSchedulerConfig({
-                algorithm: schedulerConfig.algorithm,
+                ...schedulerConfig,
                 timeQuantum: n,
             });
         }
+    };
+
+    const handleAgingToggle = () => {
+        setSchedulerConfig({
+            ...schedulerConfig,
+            priorityAging: !schedulerConfig.priorityAging,
+        });
     };
 
     const handleRun = () => {
@@ -287,31 +310,25 @@ export function SchedulerWindow() {
         runScheduler();
     };
 
-    const loadWorkload = (preset: "cpu" | "io" | "mixed") => {
+    const loadWorkload = (preset: "cpu-bound" | "io-bound" | "mixed") => {
         resetAll();
-
-        if (preset === "cpu") {
-            spawnProcess("CPU-1", 20, 5, 0);
-            spawnProcess("CPU-2", 18, 4, 2);
-            spawnProcess("CPU-3", 22, 5, 1);
-            spawnProcess("CPU-4", 15, 3, 3);
-            return;
+        const def = WORKLOADS.find((w) => w.id === preset);
+        if (!def) return;
+        for (const spec of def.processes) {
+            spawnProcess(
+                spec.name,
+                spec.burstTime,
+                spec.priority,
+                spec.arrivalTime,
+                false,
+                {
+                    workloadType: spec.workloadType,
+                    ioBurstTime: spec.ioBurstTime,
+                    ioCount: spec.ioCount,
+                    threadCount: 1,
+                },
+            );
         }
-
-        if (preset === "io") {
-            spawnProcess("IO-1", 4, 2, 0);
-            spawnProcess("IO-2", 3, 2, 1);
-            spawnProcess("IO-3", 5, 1, 0);
-            spawnProcess("IO-4", 2, 2, 2);
-            spawnProcess("IO-5", 4, 1, 3);
-            return;
-        }
-
-        spawnProcess("CPU-A", 16, 5, 0);
-        spawnProcess("IO-A", 3, 2, 1);
-        spawnProcess("CPU-B", 12, 4, 2);
-        spawnProcess("IO-B", 4, 1, 0);
-        spawnProcess("MIX-1", 8, 3, 3);
     };
 
     const ALGO_OPTIONS: { value: SchedulerAlgorithm; label: string }[] = [
@@ -401,6 +418,25 @@ export function SchedulerWindow() {
                     </div>
                 )}
 
+                {showAging && (
+                    <button
+                        className="kobi-btn"
+                        onClick={handleAgingToggle}
+                        title="Increment priority of starving processes (Section 8.5.2)"
+                        style={{
+                            background: schedulerConfig.priorityAging
+                                ? "rgba(200,146,42,0.25)"
+                                : "rgba(200,146,42,0.06)",
+                            borderColor: schedulerConfig.priorityAging
+                                ? "var(--color-accent)"
+                                : "rgba(61,53,48,0.6)",
+                        }}
+                    >
+                        AGING:{" "}
+                        {schedulerConfig.priorityAging ? "ON" : "OFF"}
+                    </button>
+                )}
+
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                         style={{
@@ -409,17 +445,17 @@ export function SchedulerWindow() {
                             letterSpacing: "0.1em",
                         }}
                     >
-                        WORKLOAD PRESETS:
+                        WORKLOAD:
                     </span>
                     <button
                         className="kobi-btn"
-                        onClick={() => loadWorkload("cpu")}
+                        onClick={() => loadWorkload("cpu-bound")}
                     >
                         [ CPU-bound ]
                     </button>
                     <button
                         className="kobi-btn"
-                        onClick={() => loadWorkload("io")}
+                        onClick={() => loadWorkload("io-bound")}
                     >
                         [ I/O-bound ]
                     </button>
@@ -475,7 +511,11 @@ export function SchedulerWindow() {
                         value={metrics.averageTurnaroundTime.toFixed(2)}
                     />
                     <MetricCard
-                        label="CPU Utilization"
+                        label="Avg Response"
+                        value={metrics.averageResponseTime.toFixed(2)}
+                    />
+                    <MetricCard
+                        label="CPU Util"
                         value={`${metrics.cpuUtilization.toFixed(1)}%`}
                     />
                     <MetricCard
@@ -485,13 +525,11 @@ export function SchedulerWindow() {
                 </div>
             )}
 
-            {/* Gantt chart + process table */}
             <div style={{ flex: 1, overflow: "auto" }}>
                 <GanttChart entries={gantt} />
                 <ProcessMetricsTable />
             </div>
 
-            {/* Footer */}
             <div
                 style={{
                     padding: "5px 12px",
@@ -515,6 +553,15 @@ export function SchedulerWindow() {
                             | Quantum:{" "}
                             <span style={{ color: "var(--color-accent)" }}>
                                 {schedulerConfig.timeQuantum}
+                            </span>
+                        </span>
+                    )}
+                    {showAging && schedulerConfig.priorityAging && (
+                        <span>
+                            {" "}
+                            | Aging:{" "}
+                            <span style={{ color: "var(--color-accent)" }}>
+                                +1 every {schedulerConfig.agingThreshold}t
                             </span>
                         </span>
                     )}

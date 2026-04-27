@@ -1,4 +1,4 @@
-import type { PCB, ProcessState } from "../types";
+import type { PCB, ProcessState, WorkloadType } from "../types";
 
 const PROCESS_COLORS = [
     "#6366f1",
@@ -13,29 +13,44 @@ const PROCESS_COLORS = [
 
 let pidCounter = 1;
 
+export interface CreateProcessOptions {
+    priority?: number;
+    arrivalTime?: number;
+    isProtected?: boolean;
+    workloadType?: WorkloadType;
+    ioBurstTime?: number;
+    ioCount?: number;
+    threadCount?: number;
+}
+
 export class ProcessManager {
     private processes: Map<number, PCB> = new Map();
 
     createProcess(
         name: string,
         burstTime: number,
-        priority: number = 1,
-        arrivalTime: number = 0,
-        isProtected: boolean = false,
+        opts: CreateProcessOptions = {},
     ): PCB {
         const pid = pidCounter++;
+        const priority = opts.priority ?? 1;
         const pcb: PCB = {
             pid,
             name,
             state: "new",
-            isProtected,
+            isProtected: opts.isProtected ?? false,
             priority,
+            basePriority: priority,
             burstTime,
             remainingTime: burstTime,
-            arrivalTime,
+            arrivalTime: opts.arrivalTime ?? 0,
             waitingTime: 0,
             turnaroundTime: 0,
+            responseTime: 0,
             color: PROCESS_COLORS[(pid - 1) % PROCESS_COLORS.length],
+            workloadType: opts.workloadType ?? "cpu",
+            ioBurstTime: Math.max(0, opts.ioBurstTime ?? 0),
+            ioCount: Math.max(0, opts.ioCount ?? 0),
+            threadCount: Math.max(1, opts.threadCount ?? 1),
         };
         this.processes.set(pid, pcb);
         return pcb;

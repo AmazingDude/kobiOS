@@ -7,6 +7,9 @@ import { MemoryViewer } from "../windows/MemoryViewer";
 import { SyncDemo } from "../windows/SyncDemo";
 import { Terminal } from "../windows/Terminal";
 import { Notepad } from "../windows/Notepad";
+import { ExperimentsWindow } from "../windows/ExperimentsWindow";
+import { ThreadsWindow } from "../windows/ThreadsWindow";
+import { DeadlockWindow } from "../windows/DeadlockWindow";
 import {
     Settings,
     Clock,
@@ -14,6 +17,9 @@ import {
     RefreshCw,
     Terminal as TerminalIcon,
     FileText,
+    BarChart3,
+    GitBranch,
+    AlertOctagon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -77,6 +83,30 @@ const APPS: AppDef[] = [
         defaultSize: { w: 600, h: 420 },
         component: Notepad,
     },
+    {
+        id: "threads",
+        title: "threads",
+        icon: <GitBranch size={14} strokeWidth={1.5} />,
+        defaultPos: { x: 160, y: 110 },
+        defaultSize: { w: 880, h: 540 },
+        component: ThreadsWindow,
+    },
+    {
+        id: "deadlock",
+        title: "rag",
+        icon: <AlertOctagon size={14} strokeWidth={1.5} />,
+        defaultPos: { x: 220, y: 130 },
+        defaultSize: { w: 960, h: 600 },
+        component: DeadlockWindow,
+    },
+    {
+        id: "experiments",
+        title: "bench",
+        icon: <BarChart3 size={14} strokeWidth={1.5} />,
+        defaultPos: { x: 80, y: 60 },
+        defaultSize: { w: 1020, h: 640 },
+        component: ExperimentsWindow,
+    },
 ];
 
 const APP_BURST_TIMES: Record<string, number> = {
@@ -86,6 +116,9 @@ const APP_BURST_TIMES: Record<string, number> = {
     sync: 12,
     terminal: 5,
     notepad: 4,
+    threads: 10,
+    deadlock: 10,
+    experiments: 18,
 };
 
 const APP_PRIORITIES: Record<string, number> = {
@@ -95,6 +128,9 @@ const APP_PRIORITIES: Record<string, number> = {
     sync: 3,
     terminal: 3,
     notepad: 2,
+    threads: 4,
+    deadlock: 3,
+    experiments: 4,
 };
 
 const DESKTOP_ICONS = [
@@ -106,6 +142,9 @@ const DESKTOP_ICONS = [
     { id: "scheduler", label: "sched", glyph: "scheduler" },
     { id: "memory", label: "vmstat", glyph: "memory" },
     { id: "sync", label: "ipc-demo", glyph: "sync" },
+    { id: "threads", label: "threads", glyph: "threads" },
+    { id: "deadlock", label: "rag", glyph: "deadlock" },
+    { id: "experiments", label: "bench", glyph: "experiments" },
     { id: "terminal", label: "tty0", glyph: "terminal" },
     { id: "notepad", label: "nano", glyph: "notepad" },
 ];
@@ -120,6 +159,9 @@ const DESKTOP_ICON_COMPONENTS: Record<
     sync: RefreshCw,
     terminal: TerminalIcon,
     notepad: FileText,
+    threads: GitBranch,
+    deadlock: AlertOctagon,
+    experiments: BarChart3,
 };
 
 interface WinState {

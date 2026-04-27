@@ -1,6 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useKernelStore } from "../../store/kernelStore";
-import type { MemoryFrame, PageReplacementPolicy } from "../../types";
+import type {
+    MemoryFrame,
+    PageReplacementPolicy,
+    PageReferenceEvent,
+} from "../../types";
+import { MemoryManager } from "../../kernel/MemoryManager";
+
+const POLICIES: PageReplacementPolicy[] = ["FIFO", "LRU", "OPTIMAL", "CLOCK"];
+
+const POLICY_DESCRIPTIONS: Record<PageReplacementPolicy, string> = {
+    FIFO: "Evicts the frame that was loaded earliest.",
+    LRU: "Evicts the frame whose page was accessed least recently.",
+    OPTIMAL:
+        "Belady's optimal — evicts the frame whose page will not be used for the longest time in the future.",
+    CLOCK: "Second-chance algorithm using a circular reference-bit clock.",
+};
 
 function FrameGrid({
     frames,
@@ -53,14 +68,250 @@ function FrameGrid({
     );
 }
 
+function ReferenceStringSimulator() {
+    const [refString, setRefString] = useState(
+        "7,0,1,2,0,3,0,4,2,3,0,3,2,1,2,0,1,7,0,1",
+    );
+    const [frameCount, setFrameCount] = useState("3");
+    const [policy, setPolicy] = useState<PageReplacementPolicy>("OPTIMAL");
+
+    const result = useMemo(() => {
+        const refs = refString
+            .split(/[,\s]+/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+            .map((s) => parseInt(s, 10))
+            .filter((n) => !isNaN(n));
+        const fc = Math.max(1, parseInt(frameCount, 10) || 3);
+        if (refs.length === 0) return null;
+        return {
+            refs,
+            sim: MemoryManager.simulateReferenceString(refs, fc, policy),
+            frameCount: fc,
+        };
+    }, [refString, frameCount, policy]);
+
+    return (
+        <div
+            style={{
+                padding: "8px 12px",
+                borderTop: "1px solid rgba(61,53,48,0.4)",
+            }}
+        >
+            <div
+                style={{
+                    fontSize: 9,
+                    color: "var(--color-muted)",
+                    letterSpacing: "0.1em",
+                    marginBottom: 6,
+                }}
+            >
+                REFERENCE STRING SIMULATOR — {policy}
+            </div>
+
+            <div
+                style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    marginBottom: 8,
+                }}
+            >
+                <span style={{ fontSize: 10, color: "var(--color-muted)" }}>
+                    refs:
+                </span>
+                <input
+                    className="kobi-input"
+                    value={refString}
+                    onChange={(e) => setRefString(e.target.value)}
+                    style={{ width: 280 }}
+                />
+                <span style={{ fontSize: 10, color: "var(--color-muted)" }}>
+                    frames:
+                </span>
+                <input
+                    className="kobi-input"
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={frameCount}
+                    onChange={(e) => setFrameCount(e.target.value)}
+                    style={{ width: 50 }}
+                />
+                <span style={{ fontSize: 10, color: "var(--color-muted)" }}>
+                    policy:
+                </span>
+                <select
+                    className="kobi-select"
+                    value={policy}
+                    onChange={(e) =>
+                        setPolicy(e.target.value as PageReplacementPolicy)
+                    }
+                >
+                    {POLICIES.map((p) => (
+                        <option key={p} value={p}>
+                            {p}
+                        </option>
+                    ))}
+                </select>
+            </div>
+
+            {result && (
+                <>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <div className="metric-card" style={{ flex: 1 }}>
+                            <div className="metric-label">Page Faults</div>
+                            <div
+                                className="metric-value"
+                                style={{ fontSize: 16, color: "#f97316" }}
+                            >
+                                {result.sim.pageFaults}
+                            </div>
+                        </div>
+                        <div className="metric-card" style={{ flex: 1 }}>
+                            <div className="metric-label">Page Hits</div>
+                            <div
+                                className="metric-value"
+                                style={{ fontSize: 16, color: "#14b8a6" }}
+                            >
+                                {result.sim.pageHits}
+                            </div>
+                        </div>
+                        <div className="metric-card" style={{ flex: 1 }}>
+                            <div className="metric-label">Hit Ratio</div>
+                            <div
+                                className="metric-value"
+                                style={{ fontSize: 16 }}
+                            >
+                                {(
+                                    (result.sim.pageHits /
+                                        Math.max(1, result.refs.length)) *
+                                    100
+                                ).toFixed(1)}
+                                %
+                            </div>
+                        </div>
+                    </div>
+
+                    <TraceGrid
+                        events={result.sim.events}
+                        refs={result.refs}
+                        frameCount={result.frameCount}
+                    />
+                </>
+            )}
+
+            <div
+                style={{
+                    fontSize: 9,
+                    color: "var(--color-muted)",
+                    marginTop: 6,
+                    fontStyle: "italic",
+                }}
+            >
+                {POLICY_DESCRIPTIONS[policy]}
+            </div>
+        </div>
+    );
+}
+
+function TraceGrid({
+    events,
+    refs,
+    frameCount,
+}: {
+    events: PageReferenceEvent[];
+    refs: number[];
+    frameCount: number;
+}) {
+    // Reconstruct frame snapshots step-by-step
+    const snapshots: (number | null)[][] = [];
+    const cur: (number | null)[] = Array(frameCount).fill(null);
+    let lastEvictedSlot: number | null = null;
+    for (const ev of events) {
+        if (ev.fault) {
+            // find slot: free first, else evictedFrameId
+            const free = cur.indexOf(null);
+            if (free !== -1) {
+                cur[free] = ev.pageNumber;
+                lastEvictedSlot = free;
+            } else if (ev.evictedFrameId !== undefined) {
+                cur[ev.evictedFrameId] = ev.pageNumber;
+                lastEvictedSlot = ev.evictedFrameId;
+            }
+        }
+        snapshots.push([...cur]);
+    }
+
+    return (
+        <div style={{ overflow: "auto" }}>
+            <table className="kobi-table" style={{ fontSize: 10 }}>
+                <thead>
+                    <tr>
+                        <th style={{ minWidth: 50 }}>Step</th>
+                        <th>Ref</th>
+                        {Array.from({ length: frameCount }, (_, i) => (
+                            <th key={i}>F{i}</th>
+                        ))}
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {events.map((ev, idx) => (
+                        <tr key={idx}>
+                            <td>{ev.step}</td>
+                            <td
+                                style={{
+                                    color: "var(--color-accent)",
+                                    fontWeight: 600,
+                                }}
+                            >
+                                {refs[ev.step]}
+                            </td>
+                            {snapshots[idx].map((page, fi) => (
+                                <td
+                                    key={fi}
+                                    style={{
+                                        fontFamily: "var(--font-mono)",
+                                        background:
+                                            ev.fault && fi === lastEvictedSlot
+                                                ? "rgba(249,115,22,0.1)"
+                                                : "transparent",
+                                    }}
+                                >
+                                    {page === null ? "·" : page}
+                                </td>
+                            ))}
+                            <td
+                                style={{
+                                    color: ev.fault ? "#f97316" : "#14b8a6",
+                                    fontSize: 9,
+                                    letterSpacing: "0.1em",
+                                }}
+                            >
+                                {ev.fault
+                                    ? ev.evictedPage !== undefined
+                                        ? `FAULT (evict p${ev.evictedPage})`
+                                        : "FAULT"
+                                    : "HIT"}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 export function MemoryViewer() {
     const processes = useKernelStore((s) => s.processes);
     const memoryFrames = useKernelStore((s) => s.memoryFrames);
     const memoryStats = useKernelStore((s) => s.memoryStats);
     const pageFaults = useKernelStore((s) => s.pageFaults);
+    const policy = useKernelStore((s) => s.memoryPolicy);
     const setPolicy = useKernelStore((s) => s.setMemoryPolicy);
     const accessPage = useKernelStore((s) => s.accessPage);
-    const [policy, setLocalPolicy] = useState<PageReplacementPolicy>("FIFO");
     const [selectedPid, setSelectedPid] = useState<number | null>(null);
 
     const activeProcs = processes
@@ -90,6 +341,7 @@ export function MemoryViewer() {
                     alignItems: "center",
                     background: "rgba(16,12,10,0.4)",
                     flexShrink: 0,
+                    flexWrap: "wrap",
                 }}
             >
                 <span
@@ -101,14 +353,12 @@ export function MemoryViewer() {
                 >
                     POLICY:
                 </span>
-                {(["FIFO", "LRU"] as PageReplacementPolicy[]).map((p) => (
+                {POLICIES.map((p) => (
                     <button
                         key={p}
                         className="kobi-btn"
-                        onClick={() => {
-                            setLocalPolicy(p);
-                            setPolicy(p);
-                        }}
+                        onClick={() => setPolicy(p)}
+                        title={POLICY_DESCRIPTIONS[p]}
                         style={{
                             background:
                                 policy === p
@@ -188,9 +438,7 @@ export function MemoryViewer() {
                 ))}
             </div>
 
-            {/* Main area */}
             <div style={{ flex: 1, overflow: "auto" }}>
-                {/* Legend */}
                 {activeProcs.length > 0 && (
                     <div
                         style={{
@@ -241,7 +489,6 @@ export function MemoryViewer() {
                     </div>
                 )}
 
-                {/* Frame grid */}
                 <div>
                     <div
                         style={{
@@ -260,7 +507,6 @@ export function MemoryViewer() {
                     />
                 </div>
 
-                {/* Selected process page table */}
                 {selectedPid !== null && selectedProc && (
                     <div style={{ padding: "0 12px 10px" }}>
                         <div
@@ -295,7 +541,7 @@ export function MemoryViewer() {
                                         >
                                             {f.frameId}
                                         </td>
-                                        <td style={{ color: "#14b8a6" }}>✓</td>
+                                        <td style={{ color: "#14b8a6" }}>OK</td>
                                         <td>
                                             <span
                                                 className="state-badge"
@@ -322,22 +568,25 @@ export function MemoryViewer() {
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            height: 180,
+                            height: 100,
                             color: "var(--color-muted)",
                             fontSize: 11,
                             flexDirection: "column",
                             gap: 8,
+                            padding: "20px 0",
                         }}
                     >
-                        <div style={{ fontSize: 24 }}>▦</div>
+                        <div style={{ fontSize: 22 }}>▦</div>
                         <div>
-                            No active processes — spawn some in Process Manager
+                            No active processes — spawn some, or try the
+                            simulator below
                         </div>
                     </div>
                 )}
+
+                <ReferenceStringSimulator />
             </div>
 
-            {/* Footer */}
             <div
                 style={{
                     padding: "5px 12px",
@@ -355,7 +604,8 @@ export function MemoryViewer() {
                     <span style={{ color: "var(--color-accent)" }}>
                         {policy}
                     </span>{" "}
-                    | Used: {memoryStats.usedFrames}/{memoryStats.totalFrames} frames
+                    | Used: {memoryStats.usedFrames}/{memoryStats.totalFrames}
+                    {" "}frames
                 </span>
                 <span style={{ color: "rgba(138,122,106,0.5)" }}>
                     Memory Viewer

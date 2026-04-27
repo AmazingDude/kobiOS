@@ -5,6 +5,47 @@ import type {
     SchedulerMetrics,
 } from "../types";
 
+/**
+ * Tick-based unified scheduler simulator.
+ *
+ * Supports:
+ *   - FCFS (non-preemptive)
+ *   - RR (preemptive, time quantum)
+ *   - PRIORITY_RR (priority-driven RR with optional aging — Section 8.5.2)
+ *   - SRJF (preemptive, shortest remaining job first)
+ *
+ * Each process can have I/O bursts. The CPU burst (`burstTime`) is divided
+ * into `ioCount + 1` chunks. Between chunks the process waits for
+ * `ioBurstTime` ticks in the "waiting" state, allowing other processes to
+ * occupy the CPU. This is what produces the I/O-bound vs CPU-bound vs mixed
+ * workload behaviour used in experiments.
+ *
+ * `responseTime` for a process is `firstRunAt - arrivalTime`, recorded the
+ * first time it executes on the CPU.
+ */
+
+interface SimState {
+    pid: number;
+    name: string;
+    color: string;
+    arrivalTime: number;
+    burstTime: number;
+    remaining: number;
+    basePriority: number;
+    priority: number;
+    ioCount: number;
+    ioBurstTime: number;
+    ioRemainingThisBlock: number;
+    ioBurstsDone: number;
+    cpuUsedSinceLastIO: number;
+    chunkSize: number;
+    state: "future" | "ready" | "running" | "waiting" | "done";
+    firstRunAt: number | null;
+    completionTime: number | null;
+    waitTimeInReady: number;
+    quantumUsed: number;
+}
+
 export class Scheduler {
     private config: SchedulerConfig;
 
@@ -16,277 +57,333 @@ export class Scheduler {
         this.config = config;
     }
 
-    // Returns gantt chart entries + updates PCB metrics in place
+    getConfig(): SchedulerConfig {
+        return this.config;
+    }
+
+    /**
+     * Run the scheduler against `processes` and write back per-process metrics
+     * (waitingTime, turnaroundTime, responseTime, completionTime).
+     */
     run(processes: PCB[]): { gantt: GanttEntry[]; metrics: SchedulerMetrics } {
-        // deep clone so we don't mutate originals
-        const procs = processes.map((p) => ({
-            ...p,
-            remainingTime: p.burstTime,
-        }));
+        const states = processes.map<SimState>((p) => this.toSimState(p));
+        const { gantt, totalTime } = this.simulate(states);
 
-        switch (this.config.algorithm) {
-            case "FCFS":
-                return this.fcfs(procs);
-            case "RR":
-                return this.roundRobin(procs);
-            case "PRIORITY_RR":
-                return this.priorityRoundRobin(procs);
-            case "SRJF":
-                return this.srjf(procs);
-            default:
-                return this.priority(procs);
-        }
-    }
-
-    private fcfs(procs: PCB[]): {
-        gantt: GanttEntry[];
-        metrics: SchedulerMetrics;
-    } {
-        const gantt: GanttEntry[] = [];
-        const sorted = [...procs].sort((a, b) => a.arrivalTime - b.arrivalTime);
-        let time = 0;
-
-        for (const p of sorted) {
-            if (time < p.arrivalTime) time = p.arrivalTime;
-            p.waitingTime = time - p.arrivalTime;
-            gantt.push({
-                pid: p.pid,
-                name: p.name,
-                color: p.color,
-                startTime: time,
-                endTime: time + p.burstTime,
-            });
-            time += p.burstTime;
-            p.turnaroundTime = p.waitingTime + p.burstTime;
-        }
-
-        return { gantt, metrics: this.calcMetrics(sorted, time) };
-    }
-
-    private roundRobin(procs: PCB[]): {
-        gantt: GanttEntry[];
-        metrics: SchedulerMetrics;
-    } {
-        const gantt: GanttEntry[] = [];
-        const q = this.config.timeQuantum;
-        const queue = [...procs].sort((a, b) => a.arrivalTime - b.arrivalTime);
-        let time = 0;
-        const remaining = new Map(queue.map((p) => [p.pid, p.burstTime]));
-        const ready: PCB[] = [];
-        const arrived = new Set<number>();
-        let i = 0;
-
-        while (true) {
-            // add newly arrived
-            while (i < queue.length && queue[i].arrivalTime <= time) {
-                ready.push(queue[i]);
-                arrived.add(queue[i].pid);
-                i++;
-            }
-            if (ready.length === 0) {
-                if (i < queue.length) {
-                    time = queue[i].arrivalTime;
-                    continue;
-                }
-                break;
-            }
-
-            const p = ready.shift()!;
-            const rem = remaining.get(p.pid)!;
-            const exec = Math.min(rem, q);
-
-            gantt.push({
-                pid: p.pid,
-                name: p.name,
-                color: p.color,
-                startTime: time,
-                endTime: time + exec,
-            });
-            time += exec;
-            remaining.set(p.pid, rem - exec);
-
-            // add any newly arrived during this slice
-            while (i < queue.length && queue[i].arrivalTime <= time) {
-                ready.push(queue[i]);
-                i++;
-            }
-
-            if (rem - exec > 0) ready.push(p);
-            else {
-                p.turnaroundTime = time - p.arrivalTime;
-                p.waitingTime = p.turnaroundTime - p.burstTime;
-            }
-        }
-
-        return { gantt, metrics: this.calcMetrics(queue, time) };
-    }
-
-    private priority(procs: PCB[]): {
-        gantt: GanttEntry[];
-        metrics: SchedulerMetrics;
-    } {
-        const gantt: GanttEntry[] = [];
-        const sorted = [...procs].sort((a, b) =>
-            a.arrivalTime !== b.arrivalTime
-                ? a.arrivalTime - b.arrivalTime
-                : b.priority - a.priority,
-        );
-        let time = 0;
-        const done = new Set<number>();
-
-        while (done.size < sorted.length) {
-            const available = sorted.filter(
-                (p) => p.arrivalTime <= time && !done.has(p.pid),
+        for (const s of states) {
+            const pcb = processes.find((p) => p.pid === s.pid);
+            if (!pcb) continue;
+            const completionTime = s.completionTime ?? s.arrivalTime;
+            const turnaround = Math.max(0, completionTime - s.arrivalTime);
+            const totalDemand = s.burstTime + s.ioCount * s.ioBurstTime;
+            const waiting = Math.max(0, turnaround - totalDemand);
+            const response = Math.max(
+                0,
+                (s.firstRunAt ?? completionTime) - s.arrivalTime,
             );
-            if (available.length === 0) {
-                time++;
-                continue;
-            }
 
-            const p = available.sort((a, b) => b.priority - a.priority)[0];
-            p.waitingTime = time - p.arrivalTime;
-            gantt.push({
-                pid: p.pid,
-                name: p.name,
-                color: p.color,
-                startTime: time,
-                endTime: time + p.burstTime,
-            });
-            time += p.burstTime;
-            p.turnaroundTime = p.waitingTime + p.burstTime;
-            done.add(p.pid);
+            pcb.completionTime = completionTime;
+            pcb.turnaroundTime = turnaround;
+            pcb.waitingTime = waiting;
+            pcb.responseTime = response;
+            pcb.firstResponseAt = s.firstRunAt ?? undefined;
+            pcb.remainingTime = 0;
+            pcb.priority = s.priority;
         }
 
-        return { gantt, metrics: this.calcMetrics(sorted, time) };
+        const metrics = this.calcMetrics(processes, totalTime);
+        return { gantt, metrics };
     }
 
-    private priorityRoundRobin(procs: PCB[]): {
+    // -------------------------------------------------------------------------
+    // Core simulator
+    // -------------------------------------------------------------------------
+
+    private simulate(states: SimState[]): {
         gantt: GanttEntry[];
-        metrics: SchedulerMetrics;
+        totalTime: number;
     } {
         const gantt: GanttEntry[] = [];
-        const q = this.config.timeQuantum;
-        const queue = [...procs].sort((a, b) => a.arrivalTime - b.arrivalTime);
-        const remaining = new Map(queue.map((p) => [p.pid, p.burstTime]));
-        const ready: PCB[] = [];
-        let time = 0;
-        let i = 0;
+        const algo = this.config.algorithm;
+        const quantum = Math.max(1, this.config.timeQuantum);
+        const aging = this.config.priorityAging;
+        const agingThreshold = Math.max(1, this.config.agingThreshold);
 
-        while (true) {
-            while (i < queue.length && queue[i].arrivalTime <= time) {
-                ready.push(queue[i]);
-                i++;
+        let time = 0;
+        let currentPid: number | null = null;
+
+        const safetyLimit = states.reduce(
+            (sum, s) => sum + s.burstTime + (s.ioCount + 1) * s.ioBurstTime + 5,
+            100,
+        );
+
+        while (
+            states.some((s) => s.state !== "done") &&
+            time < safetyLimit * 4
+        ) {
+            // 1. New arrivals
+            for (const s of states) {
+                if (s.state === "future" && s.arrivalTime <= time) {
+                    s.state = "ready";
+                }
             }
 
-            if (ready.length === 0) {
-                if (i < queue.length) {
-                    time = queue[i].arrivalTime;
+            // 2. I/O completions
+            for (const s of states) {
+                if (s.state === "waiting") {
+                    s.ioRemainingThisBlock -= 1;
+                    if (s.ioRemainingThisBlock <= 0) {
+                        s.state = "ready";
+                        s.ioBurstsDone += 1;
+                    }
+                }
+            }
+
+            // 3. Aging (PRIORITY_RR only)
+            if (algo === "PRIORITY_RR" && aging) {
+                for (const s of states) {
+                    if (s.state === "ready" && s.pid !== currentPid) {
+                        s.waitTimeInReady += 1;
+                        if (s.waitTimeInReady >= agingThreshold) {
+                            s.priority += 1;
+                            s.waitTimeInReady = 0;
+                        }
+                    }
+                }
+            }
+
+            // 4. Pick a process to run if needed
+            const currentRunning =
+                currentPid !== null
+                    ? states.find((s) => s.pid === currentPid)
+                    : undefined;
+
+            const needsPick =
+                currentRunning === undefined ||
+                currentRunning.state !== "running";
+
+            if (needsPick) {
+                const candidate = this.pickNext(states, algo);
+                if (!candidate) {
+                    // No ready process — idle tick, advance time
+                    time += 1;
                     continue;
                 }
-                break;
+                if (candidate.firstRunAt === null) {
+                    candidate.firstRunAt = time;
+                }
+                candidate.state = "running";
+                candidate.quantumUsed = 0;
+                candidate.waitTimeInReady = 0;
+                currentPid = candidate.pid;
             }
 
-            // Highest priority first; ties handled by ready queue order (RR behavior).
-            ready.sort((a, b) => b.priority - a.priority);
-            const p = ready.shift()!;
-            const rem = remaining.get(p.pid)!;
-            const exec = Math.min(rem, q);
-
-            gantt.push({
-                pid: p.pid,
-                name: p.name,
-                color: p.color,
-                startTime: time,
-                endTime: time + exec,
-            });
-
-            time += exec;
-            remaining.set(p.pid, rem - exec);
-
-            while (i < queue.length && queue[i].arrivalTime <= time) {
-                ready.push(queue[i]);
-                i++;
+            // For SRJF, preempt every tick if a shorter job is now available
+            if (algo === "SRJF" && currentPid !== null) {
+                const running = states.find((s) => s.pid === currentPid);
+                if (running) {
+                    const better = states.find(
+                        (s) =>
+                            s.state === "ready" &&
+                            s.remaining < running.remaining,
+                    );
+                    if (better) {
+                        running.state = "ready";
+                        if (better.firstRunAt === null) {
+                            better.firstRunAt = time;
+                        }
+                        better.state = "running";
+                        better.quantumUsed = 0;
+                        currentPid = better.pid;
+                    }
+                }
             }
 
-            if (rem - exec > 0) {
-                ready.push(p);
-            } else {
-                p.turnaroundTime = time - p.arrivalTime;
-                p.waitingTime = p.turnaroundTime - p.burstTime;
+            // Likewise for PRIORITY_RR with aging — check if a higher-priority
+            // process should preempt at quantum start (we're at start because
+            // we either just picked or just preempted at quantum boundary).
+            if (algo === "PRIORITY_RR" && currentPid !== null) {
+                const running = states.find((s) => s.pid === currentPid);
+                if (running) {
+                    const better = states.find(
+                        (s) =>
+                            s.state === "ready" &&
+                            s.priority > running.priority,
+                    );
+                    if (better && running.quantumUsed === 0) {
+                        running.state = "ready";
+                        if (better.firstRunAt === null) {
+                            better.firstRunAt = time;
+                        }
+                        better.state = "running";
+                        better.quantumUsed = 0;
+                        currentPid = better.pid;
+                    }
+                }
             }
-        }
 
-        return { gantt, metrics: this.calcMetrics(queue, time) };
-    }
-
-    private srjf(procs: PCB[]): {
-        gantt: GanttEntry[];
-        metrics: SchedulerMetrics;
-    } {
-        const gantt: GanttEntry[] = [];
-        const queue = [...procs].sort((a, b) => a.arrivalTime - b.arrivalTime);
-        const remaining = new Map(queue.map((p) => [p.pid, p.burstTime]));
-        let time = 0;
-        let completed = 0;
-
-        while (completed < queue.length) {
-            const available = queue
-                .filter(
-                    (p) =>
-                        p.arrivalTime <= time &&
-                        (remaining.get(p.pid) ?? 0) > 0,
-                )
-                .sort(
-                    (a, b) =>
-                        (remaining.get(a.pid) ?? 0) -
-                        (remaining.get(b.pid) ?? 0),
-                );
-
-            if (available.length === 0) {
-                time++;
+            // 5. Run the current process for one tick
+            if (currentPid === null) {
+                time += 1;
+                continue;
+            }
+            const running = states.find((s) => s.pid === currentPid);
+            if (!running) {
+                currentPid = null;
                 continue;
             }
 
-            const p = available[0];
-            const rem = remaining.get(p.pid)!;
+            // Append/extend gantt entry
             const last = gantt[gantt.length - 1];
-
-            if (last && last.pid === p.pid && last.endTime === time) {
-                last.endTime += 1;
+            if (
+                last &&
+                last.pid === running.pid &&
+                last.kind === "cpu" &&
+                last.endTime === time
+            ) {
+                last.endTime = time + 1;
             } else {
                 gantt.push({
-                    pid: p.pid,
-                    name: p.name,
-                    color: p.color,
+                    pid: running.pid,
+                    name: running.name,
+                    color: running.color,
                     startTime: time,
                     endTime: time + 1,
+                    kind: "cpu",
                 });
             }
 
-            remaining.set(p.pid, rem - 1);
+            running.remaining -= 1;
+            running.cpuUsedSinceLastIO += 1;
+            running.quantumUsed += 1;
             time += 1;
 
-            if (rem - 1 === 0) {
-                completed++;
-                p.completionTime = time;
-                p.turnaroundTime = time - p.arrivalTime;
-                p.waitingTime = p.turnaroundTime - p.burstTime;
+            // 6. Decide what happens after this tick
+            if (running.remaining <= 0) {
+                running.state = "done";
+                running.completionTime = time;
+                currentPid = null;
+                continue;
             }
+
+            // I/O burst trigger
+            const triggerIO =
+                running.ioBurstsDone < running.ioCount &&
+                running.cpuUsedSinceLastIO >= running.chunkSize;
+
+            if (triggerIO) {
+                running.state = "waiting";
+                running.ioRemainingThisBlock = running.ioBurstTime;
+                running.cpuUsedSinceLastIO = 0;
+                currentPid = null;
+                continue;
+            }
+
+            // Quantum expired
+            if (
+                (algo === "RR" || algo === "PRIORITY_RR") &&
+                running.quantumUsed >= quantum
+            ) {
+                running.state = "ready";
+                currentPid = null;
+                continue;
+            }
+
+            // SRJF re-evaluates each tick
+            if (algo === "SRJF") {
+                running.state = "ready";
+                currentPid = null;
+                continue;
+            }
+
+            // FCFS: keep running, do nothing
         }
 
-        return { gantt, metrics: this.calcMetrics(queue, time) };
+        return { gantt, totalTime: time };
+    }
+
+    private pickNext(
+        states: SimState[],
+        algo: SchedulerConfig["algorithm"],
+    ): SimState | undefined {
+        const ready = states.filter((s) => s.state === "ready");
+        if (ready.length === 0) return undefined;
+
+        switch (algo) {
+            case "FCFS":
+                return ready.sort(
+                    (a, b) =>
+                        a.arrivalTime - b.arrivalTime || a.pid - b.pid,
+                )[0];
+            case "RR":
+                // FIFO of ready queue; we approximate by arrival/PID order
+                return ready.sort((a, b) => a.pid - b.pid)[0];
+            case "PRIORITY_RR":
+                return ready.sort(
+                    (a, b) => b.priority - a.priority || a.pid - b.pid,
+                )[0];
+            case "SRJF":
+                return ready.sort(
+                    (a, b) => a.remaining - b.remaining || a.pid - b.pid,
+                )[0];
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private toSimState(p: PCB): SimState {
+        const ioCount = Math.max(0, p.ioCount ?? 0);
+        const ioBurstTime = Math.max(0, p.ioBurstTime ?? 0);
+        const chunkSize =
+            ioCount > 0 ? Math.max(1, Math.ceil(p.burstTime / (ioCount + 1))) : p.burstTime;
+
+        return {
+            pid: p.pid,
+            name: p.name,
+            color: p.color,
+            arrivalTime: p.arrivalTime,
+            burstTime: p.burstTime,
+            remaining: p.burstTime,
+            basePriority: p.basePriority ?? p.priority,
+            priority: p.priority,
+            ioCount,
+            ioBurstTime,
+            ioRemainingThisBlock: 0,
+            ioBurstsDone: 0,
+            cpuUsedSinceLastIO: 0,
+            chunkSize,
+            state: "future",
+            firstRunAt: null,
+            completionTime: null,
+            waitTimeInReady: 0,
+            quantumUsed: 0,
+        };
     }
 
     private calcMetrics(procs: PCB[], totalTime: number): SchedulerMetrics {
         const n = procs.length;
-        const totalBurst = procs.reduce((s, p) => s + p.burstTime, 0);
+        if (n === 0 || totalTime === 0) {
+            return {
+                averageWaitingTime: 0,
+                averageTurnaroundTime: 0,
+                averageResponseTime: 0,
+                cpuUtilization: 0,
+                throughput: 0,
+                totalTime,
+            };
+        }
+        const totalCPUDemand = procs.reduce((s, p) => s + p.burstTime, 0);
         return {
             averageWaitingTime:
                 procs.reduce((s, p) => s + p.waitingTime, 0) / n,
             averageTurnaroundTime:
                 procs.reduce((s, p) => s + p.turnaroundTime, 0) / n,
-            cpuUtilization: (totalBurst / totalTime) * 100,
+            averageResponseTime:
+                procs.reduce((s, p) => s + p.responseTime, 0) / n,
+            cpuUtilization: (totalCPUDemand / totalTime) * 100,
             throughput: n / totalTime,
+            totalTime,
         };
     }
 }
